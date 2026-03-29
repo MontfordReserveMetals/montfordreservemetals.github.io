@@ -55,7 +55,7 @@ function calculateEstimate() {
   if (estimateSummary) {
     estimateSummary.textContent =
       `Based on the submitted details, the estimated amount you would receive is ` +
-      `${currencyFormatter.format(estimate)}. Final offers follow inspection and office review.`;
+      `${currencyFormatter.format(estimate)}. Submit promptly to help lock in this estimate before gold prices change.`;
   }
 
   return {
