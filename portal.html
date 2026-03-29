@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Portal | Montford Reserve Metals</title>
+  <meta
+    name="description"
+    content="Secure client portal for Montford Reserve Metals to review shipment milestones, inspection status, offers, and settlement."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body class="portal-page">
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Montford Reserve Metals home">
+        <span class="brand-mark" data-brand-mark>MR</span>
+        <span class="brand-copy">
+          <strong data-brand-name>Montford Reserve Metals</strong>
+          <span>Private Client Portal</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a href="index.html">Home</a>
+        <a href="process.html">Protocol</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="portal.html">Portal</a>
+      </nav>
+    </header>
+
+    <main class="portal-main">
+      <section class="portal-hero reveal">
+        <div class="eyebrow">Private client portal</div>
+        <h1>Clients can review active files without chasing routine updates.</h1>
+        <p class="lead">
+          The Montford Reserve Metals portal is designed for discreet visibility into shipment milestones, inspection
+          status, final offers, and settlement progress.
+        </p>
+      </section>
+
+      <section class="portal-shell-card reveal" data-portal-root>
+        <div class="status-banner" id="portal-status-banner">
+          Configure <code>js/site-config.js</code> with your Supabase project details to enable live client login.
+        </div>
+
+        <div class="portal-layout">
+          <aside class="auth-panel" id="auth-card">
+            <p class="panel-topline">Client login</p>
+            <h2>Send a secure magic link</h2>
+            <p class="auth-copy">
+              Clients with active files can request a secure sign-in link using the email address associated with their review.
+            </p>
+
+            <form id="magic-link-form" class="auth-form">
+              <label for="email">Email address</label>
+              <input id="email" name="email" type="email" placeholder="client@example.com" required>
+              <button class="button button-primary" type="submit">Email sign-in link</button>
+            </form>
+
+            <p class="auth-note">
+              Portal access is limited to records associated with the signed-in email address.
+            </p>
+          </aside>
+
+          <section class="dashboard-panel" id="dashboard-panel">
+            <div class="dashboard-head">
+              <div>
+                <p class="panel-topline">Client dashboard</p>
+                <h2 id="profile-name">Private client overview</h2>
+                <p id="profile-meta">Portal data will appear here after secure sign-in.</p>
+              </div>
+              <button class="button button-secondary hidden" type="button" id="sign-out-button">Sign out</button>
+            </div>
+
+            <div class="empty-state" id="empty-state">
+              <h3>Preview mode is active</h3>
+              <p>
+                Once live access is enabled, this area will show active reviews, shipment milestones, and final offer
+                status for the signed-in client.
+              </p>
+            </div>
+
+            <div class="dashboard-grid hidden" id="dashboard-grid">
+              <section class="dashboard-block">
+                <div class="dashboard-label">Client summary</div>
+                <dl class="profile-grid" id="profile-grid"></dl>
+              </section>
+
+              <section class="dashboard-block dashboard-block-wide">
+                <div class="dashboard-label">Active files</div>
+                <div id="quote-list" class="quote-list"></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <strong data-brand-name>Montford Reserve Metals</strong>
+        <p>The Montford Reserve Metals portal gives private clients one place to review file status, offers, and settlement progress.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <a href="process.html">Process</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+      <div class="footer-meta">
+        <a data-contact-email href="mailto:privateoffice@example.com">privateoffice@example.com</a>
+        <a data-contact-phone href="tel:+15615550188">(561) 555-0188</a>
+        <span>&copy; <span id="current-year"></span> <span data-brand-name>Montford Reserve Metals</span></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/site-config.js"></script>
+  <script type="module" src="js/portal.js"></script>
+</body>
+</html>
