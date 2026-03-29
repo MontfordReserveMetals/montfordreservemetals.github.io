@@ -801,8 +801,24 @@ h3 {
 
 .estimate-amount {
   font-family: "Cormorant Garamond", serif;
-  font-size: clamp(3.2rem, 6vw, 4.8rem);
+  font-size: clamp(3.6rem, 6.8vw, 5.2rem);
+  font-weight: 700;
+  color: #79db92;
+  text-shadow: 0 10px 28px rgba(121, 219, 146, 0.18);
   margin: 0.4rem 0 1rem;
+}
+
+.estimate-message {
+  font-size: 1.08rem;
+  line-height: 1.75;
+}
+
+.estimate-note {
+  margin-top: 1.5rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid rgba(247, 241, 231, 0.12);
+  color: rgba(247, 241, 231, 0.7);
+  line-height: 1.65;
 }
 
 .formula-list {

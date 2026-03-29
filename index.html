@@ -309,10 +309,7 @@
               </label>
             </div>
 
-            <label>
-              Indicative house buy price per pure ounce
-              <input id="house-price" name="house-price" type="number" min="0" step="0.01" required>
-            </label>
+            <input id="house-price" name="house-price" type="hidden">
 
             <div class="form-divider" aria-hidden="true"></div>
 
@@ -369,25 +366,14 @@
           </form>
 
           <aside class="estimate-output">
-            <div class="output-topline">Illustrative estimate</div>
+            <div class="output-topline">Estimated client payout</div>
             <div class="estimate-amount" id="estimate-amount">$0</div>
-            <p id="estimate-summary">
-              Use the estimate as an indicative starting point. The office extends final offers after review.
+            <p class="estimate-message" id="estimate-summary">
+              Based on the submitted details, this panel shows the estimated amount the client would receive if the description is confirmed on review.
             </p>
-            <dl class="formula-list">
-              <div>
-                <dt>Formula</dt>
-                <dd><code>weight_g x purity x house_buy_price_per_oz / 31.1035</code></dd>
-              </div>
-              <div>
-                <dt>Best practice</dt>
-                <dd>Treat the public estimate as preliminary. Final figures follow inspection and office review.</dd>
-              </div>
-              <div>
-                <dt>Private office standard</dt>
-                <dd>Every file should move from first estimate to final offer with clear communication and documented handling.</dd>
-              </div>
-            </dl>
+            <p class="estimate-note">
+              Final offers follow inspection, verification, and office approval.
+            </p>
           </aside>
         </div>
       </section>

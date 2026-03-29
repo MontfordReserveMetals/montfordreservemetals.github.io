@@ -54,8 +54,8 @@ function calculateEstimate() {
 
   if (estimateSummary) {
     estimateSummary.textContent =
-      `${itemSummary} at ${karat} purity, ${weight.toFixed(1)} grams, and a manual house buy price of ` +
-      `${currencyFormatter.format(housePrice)} per pure ounce yields an indicative estimate of ${currencyFormatter.format(estimate)}.`;
+      `Based on the submitted details, the estimated amount you would receive is ` +
+      `${currencyFormatter.format(estimate)}. Final offers follow inspection and office review.`;
   }
 
   return {
