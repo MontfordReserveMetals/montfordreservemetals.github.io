@@ -143,8 +143,8 @@ async function initMarketBanner() {
       setMarketBannerState(
         items,
         fetchedAt
-          ? `Cached from metals.dev · ${marketTimestampFormatter.format(new Date(fetchedAt))}`
-          : "Cached from metals.dev"
+          ? `Updated ${marketTimestampFormatter.format(new Date(fetchedAt))}`
+          : "Market update pending"
       );
     } catch (error) {
       console.error(error);

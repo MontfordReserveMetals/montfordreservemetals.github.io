@@ -30,6 +30,8 @@ const requestButton = document.getElementById("request-button");
 
 let supabase = null;
 let latestEstimate = null;
+let estimateRequestSequence = 0;
+let estimateRefreshTimer = null;
 
 if (housePriceInput && !housePriceInput.value) {
   housePriceInput.value = defaultHousePrice.toFixed(2);
@@ -41,7 +43,7 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2
 });
 
-function calculateEstimate() {
+function getEstimateContext() {
   const karat = document.getElementById("karat")?.value ?? "14K";
   const itemSummary = document.getElementById("item-summary")?.value?.trim() || "Gold items";
   const weight = Number(document.getElementById("weight")?.value ?? 0);
@@ -52,16 +54,6 @@ function calculateEstimate() {
     ? (weight * purity * housePrice) / 31.1035
     : 0;
 
-  if (estimateAmount) {
-    estimateAmount.textContent = currencyFormatter.format(estimate);
-  }
-
-  if (estimateSummary) {
-    estimateSummary.textContent =
-      `Based on the submitted details, the estimated amount you would receive is ` +
-      `${currencyFormatter.format(estimate)}. Submit promptly to help lock in this estimate before gold prices change.`;
-  }
-
   return {
     itemSummary,
     metalType: "gold",
@@ -70,6 +62,18 @@ function calculateEstimate() {
     housePrice,
     estimate
   };
+}
+
+function buildEstimateContextKey(baseContext) {
+  return `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`;
+}
+
+function renderManualEstimate(baseContext) {
+  setEstimateDisplay(
+    baseContext.estimate,
+    `Based on the submitted details, the estimated amount you would receive is ${currencyFormatter.format(baseContext.estimate)}. Submit promptly to help lock in this estimate before gold prices change.`,
+    baseContext.estimate
+  );
 }
 
 function setEstimateDisplay(amount, summary, fallbackAmount = amount) {
@@ -82,32 +86,56 @@ function setEstimateDisplay(amount, summary, fallbackAmount = amount) {
   }
 }
 
-function markEstimateAsDirty() {
-  latestEstimate = null;
-
-  if (!supabase) {
-    calculateEstimate();
-    return;
-  }
-
+function setEstimateLoading(message = "Updating the payout estimate from the latest market snapshot...") {
   if (estimateSummary) {
-    estimateSummary.textContent =
-      "Refresh estimate to see a payout estimate based on the latest cached market conditions.";
+    estimateSummary.textContent = message;
   }
 }
 
-async function refreshEstimate() {
-  const baseContext = calculateEstimate();
+function scheduleEstimateRefresh() {
+  latestEstimate = null;
 
   if (!supabase) {
+    renderManualEstimate(getEstimateContext());
+    return;
+  }
+
+  if (estimateRefreshTimer) {
+    window.clearTimeout(estimateRefreshTimer);
+  }
+
+  setEstimateLoading();
+
+  estimateRefreshTimer = window.setTimeout(() => {
+    refreshEstimate({ showLoading: false }).catch((error) => console.error(error));
+  }, 250);
+}
+
+async function refreshEstimate({ showLoading = true } = {}) {
+  const baseContext = getEstimateContext();
+  const contextKey = buildEstimateContextKey(baseContext);
+
+  if (!supabase) {
+    renderManualEstimate(baseContext);
     latestEstimate = {
       estimatedQuote: Number(baseContext.estimate.toFixed(2)),
       marketSpotPerOunce: Number(baseContext.housePrice.toFixed(2)),
       marketSnapshotAt: null,
       marketSource: "manual",
-      contextKey: `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`
+      contextKey
     };
     return latestEstimate;
+  }
+
+  if (estimateRefreshTimer) {
+    window.clearTimeout(estimateRefreshTimer);
+    estimateRefreshTimer = null;
+  }
+
+  const requestSequence = ++estimateRequestSequence;
+
+  if (showLoading) {
+    setEstimateLoading();
   }
 
   const { data, error } = await supabase.functions.invoke(estimateFunctionName, {
@@ -117,6 +145,10 @@ async function refreshEstimate() {
       weightGrams: baseContext.weight
     }
   });
+
+  if (requestSequence !== estimateRequestSequence) {
+    return latestEstimate;
+  }
 
   if (error) {
     setEstimateDisplay(
@@ -133,7 +165,7 @@ async function refreshEstimate() {
     marketSpotPerOunce: Number(data.marketSpotPerOunce ?? 0),
     marketSnapshotAt: data.marketSnapshotAt ?? null,
     marketSource: data.marketSource ?? "metals.dev",
-    contextKey: `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`
+    contextKey
   };
 
   setEstimateDisplay(
@@ -180,14 +212,6 @@ function resetLeadFields() {
   }
 }
 
-if (estimatorForm) {
-  ["change", "input"].forEach((eventName) => {
-    estimatorForm.addEventListener(eventName, markEstimateAsDirty);
-  });
-
-  markEstimateAsDirty();
-}
-
 if (calculateButton) {
   calculateButton.addEventListener("click", async () => {
     await refreshEstimate();
@@ -197,15 +221,28 @@ if (calculateButton) {
 if (isSupabaseConfigured()) {
   supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
   setRequestStatus(`Live intake is enabled. Market-backed payout estimates and new private review requests will be stored for ${founderName}'s office review.`, "success");
-  refreshEstimate().catch((error) => console.error(error));
+  setEstimateLoading("Loading the latest payout estimate...");
 }
 
 if (estimatorForm) {
+  const estimateFields = ["karat", "weight"];
+
+  estimateFields.forEach((fieldId) => {
+    const field = document.getElementById(fieldId);
+    if (!field) {
+      return;
+    }
+
+    ["change", "input"].forEach((eventName) => {
+      field.addEventListener(eventName, scheduleEstimateRefresh);
+    });
+  });
+
   estimatorForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const baseContext = calculateEstimate();
-    const contextKey = `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`;
+    const baseContext = getEstimateContext();
+    const contextKey = buildEstimateContextKey(baseContext);
     const estimateContext = latestEstimate?.contextKey === contextKey
       ? latestEstimate
       : await refreshEstimate();
@@ -283,6 +320,10 @@ if (estimatorForm) {
     );
     resetLeadFields();
   });
+}
+
+if (estimatorForm) {
+  scheduleEstimateRefresh();
 }
 
 initRevealAnimations();
