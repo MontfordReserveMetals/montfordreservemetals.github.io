@@ -311,6 +311,23 @@ async function loadDashboard(supabase, user) {
   showDashboard(profile, quotesResponse.data ?? []);
 }
 
+async function handlePortalSession(supabase, session) {
+  if (!session?.user) {
+    showLoggedOut();
+    return;
+  }
+
+  signOutButton.classList.remove("hidden");
+
+  try {
+    await loadDashboard(supabase, session.user);
+    showBanner("Client records loaded successfully.", "success");
+  } catch (error) {
+    showBanner(describePortalLoadError(error), "warning");
+    console.error(error);
+  }
+}
+
 async function initLivePortal() {
   const supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey, {
     auth: {
@@ -355,36 +372,17 @@ async function initLivePortal() {
     showBanner("Signed out. Portal access remains private.", "success");
   });
 
-  supabase.auth.onAuthStateChange(async (_event, session) => {
-    if (!session?.user) {
-      showLoggedOut();
-      return;
-    }
-
-    signOutButton.classList.remove("hidden");
-
-    try {
-      await loadDashboard(supabase, session.user);
-      showBanner("Client records loaded successfully.", "success");
-    } catch (error) {
-      showBanner(describePortalLoadError(error), "warning");
-      console.error(error);
-    }
+  supabase.auth.onAuthStateChange((_event, session) => {
+    window.setTimeout(() => {
+      handlePortalSession(supabase, session).catch((error) => {
+        showBanner(describePortalLoadError(error), "warning");
+        console.error(error);
+      });
+    }, 0);
   });
 
   const sessionResponse = await supabase.auth.getSession();
-  if (sessionResponse.data.session?.user) {
-    signOutButton.classList.remove("hidden");
-    try {
-      await loadDashboard(supabase, sessionResponse.data.session.user);
-      showBanner("Client records loaded successfully.", "success");
-    } catch (error) {
-      showBanner(describePortalLoadError(error), "warning");
-      console.error(error);
-    }
-  } else {
-    showLoggedOut();
-  }
+  await handlePortalSession(supabase, sessionResponse.data.session ?? null);
 }
 
 initRevealAnimations();

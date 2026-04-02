@@ -551,6 +551,22 @@ async function activateStaffSession(user) {
   showBanner("Office dashboard loaded successfully.", "success");
 }
 
+async function handleAdminSession(session) {
+  if (!session?.user) {
+    renderLoggedOut();
+    return;
+  }
+
+  try {
+    await activateStaffSession(session.user);
+  } catch (error) {
+    await state.supabase.auth.signOut();
+    renderLoggedOut();
+    showBanner(error instanceof Error ? error.message : "Staff authorization failed.", "warning");
+    console.error(error);
+  }
+}
+
 async function initAdminDashboard() {
   state.supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey, {
     auth: {
@@ -586,6 +602,7 @@ async function initAdminDashboard() {
       return;
     }
 
+    showBanner("Credentials accepted. Loading office dashboard...", "success");
     staffLoginForm.reset();
   });
 
@@ -754,35 +771,17 @@ async function initAdminDashboard() {
     showBanner("Client file updated successfully.", "success");
   });
 
-  state.supabase.auth.onAuthStateChange(async (_event, session) => {
-    if (!session?.user) {
-      renderLoggedOut();
-      return;
-    }
-
-    try {
-      await activateStaffSession(session.user);
-    } catch (error) {
-      await state.supabase.auth.signOut();
-      renderLoggedOut();
-      showBanner(error instanceof Error ? error.message : "Staff authorization failed.", "warning");
-      console.error(error);
-    }
+  state.supabase.auth.onAuthStateChange((_event, session) => {
+    window.setTimeout(() => {
+      handleAdminSession(session).catch((error) => {
+        showBanner(error instanceof Error ? error.message : "Staff authorization failed.", "warning");
+        console.error(error);
+      });
+    }, 0);
   });
 
   const sessionResponse = await state.supabase.auth.getSession();
-  if (sessionResponse.data.session?.user) {
-    try {
-      await activateStaffSession(sessionResponse.data.session.user);
-    } catch (error) {
-      await state.supabase.auth.signOut();
-      renderLoggedOut();
-      showBanner(error instanceof Error ? error.message : "Staff authorization failed.", "warning");
-      console.error(error);
-    }
-  } else {
-    renderLoggedOut();
-  }
+  await handleAdminSession(sessionResponse.data.session ?? null);
 }
 
 initRevealAnimations();
