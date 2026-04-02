@@ -1192,6 +1192,311 @@ h3 {
   margin-top: 1.6rem;
 }
 
+.admin-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr);
+  gap: 1.1rem;
+}
+
+.admin-layout.auth-hidden {
+  grid-template-columns: 1fr;
+}
+
+.admin-layout.auth-hidden .admin-panel {
+  grid-column: 1 / -1;
+}
+
+.admin-panel {
+  display: grid;
+}
+
+.admin-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.46fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.admin-sidebar,
+.admin-detail-panel {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.admin-detail-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-metric-card {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: rgba(255, 252, 247, 0.88);
+}
+
+.admin-metric-card span {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-soft);
+}
+
+.admin-metric-card strong {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--text);
+}
+
+.admin-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-filter-bar .button {
+  width: auto;
+  min-width: 0;
+  padding-inline: 1rem;
+}
+
+.admin-filter-bar .button.is-active {
+  background: rgba(23, 30, 27, 0.96);
+  color: var(--text-inverse);
+  border-color: rgba(23, 30, 27, 0.96);
+}
+
+.admin-list,
+.quote-list {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.intake-card {
+  display: grid;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 1rem 1.05rem;
+  border-radius: 22px;
+  border: 1px solid rgba(98, 76, 41, 0.14);
+  background: rgba(255, 252, 247, 0.86);
+  color: var(--text);
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.intake-card:hover,
+.intake-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(167, 123, 51, 0.3);
+  box-shadow: 0 18px 36px rgba(35, 24, 13, 0.08);
+}
+
+.intake-card.is-selected {
+  border-color: rgba(167, 123, 51, 0.36);
+  background: rgba(251, 246, 239, 0.98);
+  box-shadow: 0 20px 40px rgba(35, 24, 13, 0.1);
+}
+
+.intake-card-head,
+.intake-card-meta,
+.admin-section-head,
+.admin-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.intake-card-head strong {
+  font-size: 1rem;
+}
+
+.intake-card-meta {
+  flex-wrap: wrap;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
+.intake-card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(167, 123, 51, 0.2);
+  background: rgba(214, 179, 118, 0.14);
+  color: #6f5121;
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.admin-empty,
+.admin-note-block,
+.admin-section {
+  padding: 1.15rem 1.2rem;
+  border-radius: 22px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: rgba(255, 252, 247, 0.86);
+}
+
+.admin-empty,
+.admin-note-block {
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
+.admin-empty {
+  min-height: 140px;
+  display: grid;
+  align-items: center;
+}
+
+.admin-note-block strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text);
+}
+
+.admin-note-block p {
+  margin: 0;
+}
+
+.admin-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-section h3 {
+  margin: 0;
+}
+
+.admin-section-head p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+  margin: 0;
+}
+
+.detail-list div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.detail-list-wide {
+  grid-column: 1 / -1;
+}
+
+.detail-list dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-soft);
+}
+
+.detail-list dd {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.admin-inline-form,
+.admin-form-grid,
+.admin-quote-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-inline-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.admin-inline-form label,
+.admin-form-grid label,
+.admin-quote-form label {
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.admin-inline-form input,
+.admin-inline-form select,
+.admin-inline-form textarea,
+.admin-form-grid input,
+.admin-form-grid select,
+.admin-form-grid textarea,
+.admin-quote-form input,
+.admin-quote-form select,
+.admin-quote-form textarea {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(100, 76, 37, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.92);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-inline-form input:focus,
+.admin-inline-form select:focus,
+.admin-inline-form textarea:focus,
+.admin-form-grid input:focus,
+.admin-form-grid select:focus,
+.admin-form-grid textarea:focus,
+.admin-quote-form input:focus,
+.admin-quote-form select:focus,
+.admin-quote-form textarea:focus {
+  outline: 2px solid rgba(167, 123, 51, 0.18);
+  border-color: rgba(167, 123, 51, 0.55);
+}
+
+.admin-form-grid textarea,
+.admin-quote-form textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+
+.admin-actions {
+  flex-wrap: wrap;
+}
+
+.quote-admin-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.quote-admin-card .quote-header {
+  margin-bottom: 0;
+}
+
 .dashboard-head {
   display: flex;
   align-items: flex-start;
@@ -1319,6 +1624,8 @@ h3 {
   .estimator-grid,
   .portal-preview,
   .portal-layout,
+  .admin-layout,
+  .admin-dashboard-grid,
   .content-grid,
   .cards-grid,
   .founder-feature-grid,
@@ -1338,6 +1645,12 @@ h3 {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid,
+  .detail-list,
+  .admin-inline-form {
     grid-template-columns: 1fr;
   }
 
@@ -1406,8 +1719,26 @@ h3 {
     width: 100%;
   }
 
-  .button {
+  .button,
+  .admin-filter-bar .button,
+  .admin-inline-form .button {
     width: 100%;
+  }
+
+  .admin-metrics,
+  .detail-list,
+  .profile-grid,
+  .resources-grid,
+  .scene-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-section-head,
+  .intake-card-head,
+  .intake-card-meta,
+  .admin-actions {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .quote-header {

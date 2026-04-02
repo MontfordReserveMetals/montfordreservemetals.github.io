@@ -116,6 +116,24 @@ function showBanner(message, tone = "warning") {
   portalBanner.className = `status-banner ${tone}`;
 }
 
+function describePortalLoadError(error) {
+  const message = error?.message || String(error || "");
+
+  if (/relation .* does not exist/i.test(message) || /could not find the table/i.test(message)) {
+    return "The portal sign-in worked, but the database schema is incomplete. Run the latest supabase/schema.sql in Supabase.";
+  }
+
+  if (/row-level security/i.test(message) || /permission denied/i.test(message)) {
+    return "The portal sign-in worked, but the current RLS policies are blocking access. Re-run the latest supabase/schema.sql.";
+  }
+
+  if (/invalid input syntax for type uuid/i.test(message)) {
+    return "The portal sign-in worked, but the linked client records are not attached to a valid Supabase user id yet.";
+  }
+
+  return "The portal connected, but records could not be loaded. Check the browser console and confirm the latest schema is installed.";
+}
+
 function isConfigured() {
   const { url, anonKey } = supabaseConfig;
   return Boolean(
@@ -349,10 +367,7 @@ async function initLivePortal() {
       await loadDashboard(supabase, session.user);
       showBanner("Client records loaded successfully.", "success");
     } catch (error) {
-      showBanner(
-        "The portal connected, but records could not be loaded. Confirm the SQL schema and RLS policies are in place.",
-        "warning"
-      );
+      showBanner(describePortalLoadError(error), "warning");
       console.error(error);
     }
   });
@@ -360,7 +375,13 @@ async function initLivePortal() {
   const sessionResponse = await supabase.auth.getSession();
   if (sessionResponse.data.session?.user) {
     signOutButton.classList.remove("hidden");
-    await loadDashboard(supabase, sessionResponse.data.session.user);
+    try {
+      await loadDashboard(supabase, sessionResponse.data.session.user);
+      showBanner("Client records loaded successfully.", "success");
+    } catch (error) {
+      showBanner(describePortalLoadError(error), "warning");
+      console.error(error);
+    }
   } else {
     showLoggedOut();
   }

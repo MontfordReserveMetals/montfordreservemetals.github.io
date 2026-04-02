@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office Dashboard | Montford Reserve Metals</title>
+  <meta
+    name="description"
+    content="Internal office dashboard for Montford Reserve Metals staff to review intake requests, create client files, and update portal statuses."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body class="portal-page admin-page">
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Montford Reserve Metals home">
+        <span class="brand-mark" data-brand-mark>MR</span>
+        <span class="brand-copy">
+          <strong data-brand-name>Montford Reserve Metals</strong>
+          <span>Office Dashboard</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a href="index.html">Home</a>
+        <a href="process.html">Protocol</a>
+        <a href="portal.html">Portal</a>
+        <a href="admin.html">Admin</a>
+      </nav>
+    </header>
+
+    <main class="portal-main">
+      <section class="portal-hero reveal">
+        <div class="eyebrow">Internal office dashboard</div>
+        <h1>Review intake, open client files, and control portal status from one place.</h1>
+        <p class="lead">
+          This page is intended for authorized staff only. It uses Supabase Auth and Row Level Security
+          to review intake requests, create quotes for portal users, and update the statuses clients see.
+        </p>
+      </section>
+
+      <section class="portal-shell-card reveal">
+        <div class="status-banner" id="admin-status-banner">
+          Configure <code>js/site-config.js</code> with your Supabase project details to enable the office dashboard.
+        </div>
+
+        <div class="admin-layout" id="admin-layout">
+          <aside class="auth-panel" id="staff-auth-card">
+            <p class="panel-topline">Staff login</p>
+            <h2>Open the office dashboard</h2>
+            <p class="auth-copy">
+              Staff should use a Supabase email and password account that has also been added to the internal
+              <code>staff_users</code> table.
+            </p>
+
+            <form id="staff-login-form" class="auth-form">
+              <label for="staff-email">Email address</label>
+              <input id="staff-email" name="email" type="email" placeholder="staff@example.com" required>
+
+              <label for="staff-password">Password</label>
+              <input id="staff-password" name="password" type="password" placeholder="Enter password" required>
+
+              <button class="button button-primary" type="submit">Sign in to office dashboard</button>
+            </form>
+
+            <p class="auth-note">
+              If the account authenticates but is not present in <code>staff_users</code>, dashboard access will be denied.
+            </p>
+          </aside>
+
+          <section class="dashboard-panel admin-panel">
+            <div class="dashboard-head">
+              <div>
+                <p class="panel-topline">Office dashboard</p>
+                <h2 id="staff-name">Private office overview</h2>
+                <p id="staff-meta">Sign in to review intake requests, create client files, and update portal statuses.</p>
+              </div>
+              <button class="button button-secondary hidden" type="button" id="admin-sign-out-button">Sign out</button>
+            </div>
+
+            <div class="empty-state" id="admin-empty-state">
+              <h3>Staff sign-in required</h3>
+              <p>
+                Once an authorized staff account signs in, this dashboard will load intake requests, linked
+                client profiles, and quote status controls.
+              </p>
+            </div>
+
+            <div class="admin-dashboard-grid hidden" id="admin-dashboard-grid">
+              <section class="dashboard-block admin-sidebar">
+                <div class="dashboard-label">Queue overview</div>
+                <div class="admin-metrics" id="intake-metrics"></div>
+
+                <div class="admin-filter-bar" id="intake-filter-bar" aria-label="Intake filters">
+                  <button class="button button-secondary" data-filter="active" type="button">Active</button>
+                  <button class="button button-secondary" data-filter="new" type="button">New</button>
+                  <button class="button button-secondary" data-filter="reviewed" type="button">Reviewed</button>
+                  <button class="button button-secondary" data-filter="contacted" type="button">Contacted</button>
+                  <button class="button button-secondary" data-filter="converted" type="button">Converted</button>
+                  <button class="button button-secondary" data-filter="closed" type="button">Closed</button>
+                  <button class="button button-secondary" data-filter="all" type="button">All</button>
+                </div>
+
+                <div class="admin-list" id="intake-list"></div>
+              </section>
+
+              <section class="dashboard-block dashboard-block-wide admin-detail-panel">
+                <div class="dashboard-label">Selected request</div>
+
+                <div class="admin-empty" id="selected-intake-empty">
+                  Choose an intake request to review its details, change the internal request status,
+                  and create or update a linked client file.
+                </div>
+
+                <div class="admin-detail-stack hidden" id="selected-intake-panel">
+                  <section class="admin-section">
+                    <div class="admin-section-head">
+                      <h3>Request snapshot</h3>
+                      <span class="admin-status-pill" id="selected-intake-pill">New</span>
+                    </div>
+                    <dl class="detail-list" id="selected-intake-details"></dl>
+                    <div class="admin-note-block" id="selected-intake-notes"></div>
+                  </section>
+
+                  <section class="admin-section">
+                    <div class="admin-section-head">
+                      <h3>Update request status</h3>
+                      <p>Internal lead pipeline only</p>
+                    </div>
+                    <form id="intake-status-form" class="admin-inline-form">
+                      <label>
+                        Request status
+                        <select id="intake-status-select" name="status">
+                          <option value="new">New</option>
+                          <option value="reviewed">Reviewed</option>
+                          <option value="contacted">Contacted</option>
+                          <option value="converted">Converted</option>
+                          <option value="closed">Closed</option>
+                        </select>
+                      </label>
+                      <button class="button button-primary" type="submit">Save request status</button>
+                    </form>
+                  </section>
+
+                  <section class="admin-section">
+                    <div class="admin-section-head">
+                      <h3>Portal account match</h3>
+                      <p>Matched by email address</p>
+                    </div>
+                    <div class="admin-note-block" id="profile-match-panel"></div>
+                  </section>
+
+                  <section class="admin-section">
+                    <div class="admin-section-head">
+                      <h3>Create client file</h3>
+                      <p>This creates the quote record shown in the portal.</p>
+                    </div>
+                    <form id="quote-create-form" class="admin-form-grid">
+                      <label>
+                        Item summary
+                        <input id="quote-item-summary" name="item_summary" type="text" required>
+                      </label>
+
+                      <label>
+                        Karat
+                        <select id="quote-karat" name="claimed_karat">
+                          <option value="10K">10K</option>
+                          <option value="14K">14K</option>
+                          <option value="18K">18K</option>
+                          <option value="22K">22K</option>
+                          <option value="24K">24K</option>
+                          <option value="mixed">Mixed</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Weight in grams
+                        <input id="quote-weight" name="claimed_weight_grams" type="number" min="0" step="0.01" required>
+                      </label>
+
+                      <label>
+                        Estimate
+                        <input id="quote-estimate" name="estimated_quote" type="number" min="0" step="0.01" required>
+                      </label>
+
+                      <label>
+                        Initial portal status
+                        <select id="quote-status" name="status">
+                          <option value="submitted">Submitted</option>
+                          <option value="awaiting_shipment" selected>Awaiting shipment</option>
+                          <option value="in_transit">In transit</option>
+                          <option value="received">Received</option>
+                          <option value="inspection_complete">Inspection complete</option>
+                          <option value="offer_sent">Offer sent</option>
+                          <option value="accepted">Accepted</option>
+                          <option value="paid">Paid</option>
+                          <option value="returned">Returned</option>
+                        </select>
+                      </label>
+
+                      <label class="form-span-2">
+                        Portal status detail
+                        <textarea
+                          id="quote-status-detail"
+                          name="status_detail"
+                          rows="3"
+                          placeholder="Example: Your file is active and shipment instructions have been sent."
+                        ></textarea>
+                      </label>
+
+                      <button class="button button-primary form-span-2" type="submit" id="create-quote-button">
+                        Create client file
+                      </button>
+                    </form>
+                  </section>
+
+                  <section class="admin-section">
+                    <div class="admin-section-head">
+                      <h3>Client files</h3>
+                      <p id="quote-count-label">No client files yet.</p>
+                    </div>
+                    <div class="quote-list" id="admin-quote-list"></div>
+                  </section>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <strong data-brand-name>Montford Reserve Metals</strong>
+        <p>Internal office dashboard for reviewing requests, creating client files, and managing portal-visible statuses.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <a href="process.html">Protocol</a>
+        <a href="portal.html">Portal</a>
+      </nav>
+      <div class="footer-meta">
+        <a data-contact-email href="mailto:privateoffice@example.com">privateoffice@example.com</a>
+        <a data-contact-phone href="tel:+15615550188">(561) 555-0188</a>
+        <span>&copy; <span id="current-year"></span> <span data-brand-name>Montford Reserve Metals</span></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/site-config.js"></script>
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>
