@@ -483,6 +483,14 @@ h3 {
   color: rgba(247, 241, 231, 0.72);
 }
 
+.hero-panel .panel-topline,
+.estimate-output .output-topline,
+.portal-window .panel-topline,
+.portal-window .output-topline,
+.portal-window .dashboard-label {
+  color: rgba(214, 179, 118, 0.9);
+}
+
 .founder-panel {
   display: grid;
   gap: 1.15rem;
