@@ -29,8 +29,9 @@ window.siteConfig = {
     }
   },
   supabase: {
-    url: "YOUR_SUPABASE_URL",
-    anonKey: "YOUR_SUPABASE_ANON_KEY",
-    magicLinkRedirectTo: "https://YOUR-GITHUB-PAGES-URL/portal.html"
+    url: "https://pfwuxvuxsszmmdfsgrju.supabase.co",
+    anonKey: "sb_publishable_cIlOrfYPVCdRAVfNPk8ROA_EuMnkE6K",
+    magicLinkRedirectTo: "https://montfordreservemetals.github.io/portal.html",
+    estimateFunctionName: "estimate-payout"
   }
 };

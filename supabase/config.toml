@@ -1,0 +1,5 @@
+[functions.refresh-market-prices]
+verify_jwt = false
+
+[functions.estimate-payout]
+verify_jwt = false

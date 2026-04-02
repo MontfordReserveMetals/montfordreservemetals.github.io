@@ -29,10 +29,14 @@ create table if not exists public.intake_requests (
   full_name text not null,
   email text not null,
   phone text,
+  metal_type text not null default 'gold',
   item_summary text not null,
   claimed_karat text not null default 'mixed',
   claimed_weight_grams numeric(10,2),
   house_buy_price_per_ounce numeric(10,2),
+  market_spot_per_ounce numeric(10,2),
+  market_source text,
+  market_snapshot_at timestamptz,
   estimated_quote numeric(10,2),
   preferred_settlement text,
   notes text,
@@ -44,15 +48,31 @@ create table if not exists public.intake_requests (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.market_price_cache (
+  metal_type text primary key check (metal_type in ('gold', 'silver', 'platinum', 'palladium')),
+  spot_price_per_ounce_usd numeric(12,4) not null,
+  currency text not null default 'USD',
+  unit text not null default 'toz',
+  source text not null default 'metals.dev',
+  fetched_at timestamptz not null,
+  raw_payload jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.quotes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   reference_code text not null unique default ('MRM-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8))),
+  metal_type text not null default 'gold',
   item_summary text not null,
   claimed_karat text not null default 'mixed',
   claimed_weight_grams numeric(10,2),
   estimated_quote numeric(10,2),
   house_buy_price_per_ounce numeric(10,2),
+  market_spot_per_ounce numeric(10,2),
+  market_source text,
+  market_snapshot_at timestamptz,
   status text not null default 'submitted' check (
     status in (
       'submitted',
@@ -144,8 +164,14 @@ create trigger set_quotes_updated_at
 before update on public.quotes
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_market_price_cache_updated_at on public.market_price_cache;
+create trigger set_market_price_cache_updated_at
+before update on public.market_price_cache
+for each row execute function public.set_updated_at();
+
 alter table public.profiles enable row level security;
 alter table public.intake_requests enable row level security;
+alter table public.market_price_cache enable row level security;
 alter table public.quotes enable row level security;
 alter table public.shipments enable row level security;
 alter table public.offers enable row level security;
@@ -162,6 +188,13 @@ with check (
   and length(trim(item_summary)) > 2
   and coalesce(claimed_weight_grams, 0) >= 0
 );
+
+drop policy if exists "Public can view cached market prices" on public.market_price_cache;
+create policy "Public can view cached market prices"
+on public.market_price_cache
+for select
+to anon, authenticated
+using (true);
 
 drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile"
@@ -234,6 +267,7 @@ using (
 
 comment on table public.quotes is 'Customer-submitted or staff-created gold quote records.';
 comment on table public.intake_requests is 'Public website lead intake. Review manually before creating or linking customer quotes.';
+comment on table public.market_price_cache is 'Server-managed cached metals prices used by private payout logic.';
 comment on table public.shipments is 'Shipment state for each quote.';
 comment on table public.offers is 'Final reviewed offers issued to customers.';
 comment on table public.payouts is 'Settlement records. Keep automated payout logic off the frontend.';

@@ -16,6 +16,7 @@ const defaultPurityMap = {
 const purityMap = config.valuation?.purityByKarat ?? defaultPurityMap;
 const defaultHousePrice = Number(config.valuation?.houseBuyPricePerOunce ?? 0);
 const supabaseConfig = config.supabase ?? {};
+const estimateFunctionName = supabaseConfig.estimateFunctionName || "estimate-payout";
 
 applySiteChrome();
 
@@ -26,6 +27,9 @@ const estimateSummary = document.getElementById("estimate-summary");
 const calculateButton = document.getElementById("calculate-button");
 const requestStatus = document.getElementById("request-status");
 const requestButton = document.getElementById("request-button");
+
+let supabase = null;
+let latestEstimate = null;
 
 if (housePriceInput && !housePriceInput.value) {
   housePriceInput.value = defaultHousePrice.toFixed(2);
@@ -60,11 +64,86 @@ function calculateEstimate() {
 
   return {
     itemSummary,
+    metalType: "gold",
     karat,
     weight,
     housePrice,
     estimate
   };
+}
+
+function setEstimateDisplay(amount, summary, fallbackAmount = amount) {
+  if (estimateAmount) {
+    estimateAmount.textContent = currencyFormatter.format(fallbackAmount ?? 0);
+  }
+
+  if (estimateSummary) {
+    estimateSummary.textContent = summary;
+  }
+}
+
+function markEstimateAsDirty() {
+  latestEstimate = null;
+
+  if (!supabase) {
+    calculateEstimate();
+    return;
+  }
+
+  if (estimateSummary) {
+    estimateSummary.textContent =
+      "Refresh estimate to see a payout estimate based on the latest cached market conditions.";
+  }
+}
+
+async function refreshEstimate() {
+  const baseContext = calculateEstimate();
+
+  if (!supabase) {
+    latestEstimate = {
+      estimatedQuote: Number(baseContext.estimate.toFixed(2)),
+      marketSpotPerOunce: Number(baseContext.housePrice.toFixed(2)),
+      marketSnapshotAt: null,
+      marketSource: "manual",
+      contextKey: `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`
+    };
+    return latestEstimate;
+  }
+
+  const { data, error } = await supabase.functions.invoke(estimateFunctionName, {
+    body: {
+      metalType: baseContext.metalType,
+      karat: baseContext.karat,
+      weightGrams: baseContext.weight
+    }
+  });
+
+  if (error) {
+    setEstimateDisplay(
+      0,
+      "The live payout estimate is temporarily unavailable. Please refresh again in a moment or submit your request for manual review.",
+      0
+    );
+    console.error(error);
+    return null;
+  }
+
+  latestEstimate = {
+    estimatedQuote: Number(data.estimatedQuote ?? 0),
+    marketSpotPerOunce: Number(data.marketSpotPerOunce ?? 0),
+    marketSnapshotAt: data.marketSnapshotAt ?? null,
+    marketSource: data.marketSource ?? "metals.dev",
+    contextKey: `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`
+  };
+
+  setEstimateDisplay(
+    latestEstimate.estimatedQuote,
+    data.message ||
+      `Based on current market conditions, the estimated amount you would receive is ${currencyFormatter.format(latestEstimate.estimatedQuote)}. Submit promptly to help lock in this estimate before prices change.`,
+    latestEstimate.estimatedQuote
+  );
+
+  return latestEstimate;
 }
 
 function setRequestStatus(message, tone = "warning") {
@@ -103,30 +182,33 @@ function resetLeadFields() {
 
 if (estimatorForm) {
   ["change", "input"].forEach((eventName) => {
-    estimatorForm.addEventListener(eventName, calculateEstimate);
+    estimatorForm.addEventListener(eventName, markEstimateAsDirty);
   });
 
-  calculateEstimate();
+  markEstimateAsDirty();
 }
 
 if (calculateButton) {
-  calculateButton.addEventListener("click", () => {
-    calculateEstimate();
+  calculateButton.addEventListener("click", async () => {
+    await refreshEstimate();
   });
 }
 
-let supabase = null;
-
 if (isSupabaseConfigured()) {
   supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
-  setRequestStatus(`Live intake is enabled. New private review requests will be stored for ${founderName}'s office review.`, "success");
+  setRequestStatus(`Live intake is enabled. Market-backed payout estimates and new private review requests will be stored for ${founderName}'s office review.`, "success");
+  refreshEstimate().catch((error) => console.error(error));
 }
 
 if (estimatorForm) {
   estimatorForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const estimateContext = calculateEstimate();
+    const baseContext = calculateEstimate();
+    const contextKey = `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`;
+    const estimateContext = latestEstimate?.contextKey === contextKey
+      ? latestEstimate
+      : await refreshEstimate();
     const fullName = String(document.getElementById("client-name")?.value ?? "").trim();
     const email = String(document.getElementById("client-email")?.value ?? "").trim();
     const phone = String(document.getElementById("client-phone")?.value ?? "").trim();
@@ -134,8 +216,13 @@ if (estimatorForm) {
     const notes = String(document.getElementById("client-notes")?.value ?? "").trim();
     const honeypot = String(document.getElementById("website")?.value ?? "").trim();
 
-    if (!fullName || !email || !estimateContext.itemSummary || estimateContext.weight <= 0) {
+    if (!fullName || !email || !baseContext.itemSummary || baseContext.weight <= 0) {
       setRequestStatus("Complete the client and item details before sending the request.", "warning");
+      return;
+    }
+
+    if (!estimateContext) {
+      setRequestStatus("The live payout estimate could not be prepared. Please refresh the estimate and try again.", "warning");
       return;
     }
 
@@ -157,11 +244,17 @@ if (estimatorForm) {
       full_name: fullName,
       email,
       phone: phone || null,
-      item_summary: estimateContext.itemSummary,
-      claimed_karat: estimateContext.karat,
-      claimed_weight_grams: Number(estimateContext.weight.toFixed(2)),
-      house_buy_price_per_ounce: Number(estimateContext.housePrice.toFixed(2)),
-      estimated_quote: Number(estimateContext.estimate.toFixed(2)),
+      metal_type: baseContext.metalType,
+      item_summary: baseContext.itemSummary,
+      claimed_karat: baseContext.karat,
+      claimed_weight_grams: Number(baseContext.weight.toFixed(2)),
+      house_buy_price_per_ounce: supabase ? null : Number(baseContext.housePrice.toFixed(2)),
+      market_spot_per_ounce: estimateContext.marketSpotPerOunce
+        ? Number(estimateContext.marketSpotPerOunce.toFixed(2))
+        : null,
+      market_source: estimateContext.marketSource || null,
+      market_snapshot_at: estimateContext.marketSnapshotAt || null,
+      estimated_quote: Number(estimateContext.estimatedQuote.toFixed(2)),
       preferred_settlement: preferredSettlement,
       notes: notes || null,
       source: "website",
