@@ -938,16 +938,16 @@ h3 {
 
 .builder-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .builder-summary {
   position: static;
-  align-self: start;
-  width: min(100%, 760px);
-  justify-self: end;
+  align-self: end;
+  width: 100%;
+  justify-self: stretch;
   padding: 1.35rem 1.4rem;
   border: 1px solid rgba(98, 76, 41, 0.14);
   border-radius: 28px;
@@ -1056,7 +1056,7 @@ h3 {
 }
 
 .builder-summary .estimate-message {
-  max-width: 34ch;
+  max-width: 28ch;
 }
 
 .builder-summary-list {
