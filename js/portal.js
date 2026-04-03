@@ -429,10 +429,12 @@ function buildOfferMarkup(quote, offer) {
   `;
 }
 
-function buildReturnLabelMarkup(quote) {
+function buildReturnLabelMarkup(quote, offer) {
   if (quote.status !== "returned") {
     return "";
   }
+
+  const canAcceptAfterDecline = Boolean(offer?.declined_at && !offer?.accepted_at);
 
   const details = [
     quote.return_label_due_at ? `Upload return label by ${formatDate(quote.return_label_due_at)}` : null,
@@ -468,6 +470,14 @@ function buildReturnLabelMarkup(quote) {
     <section class="quote-card-section">
       <div class="dashboard-label">Return label</div>
       <div class="quote-submeta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+      ${canAcceptAfterDecline ? `
+        <div class="admin-step-note">
+          Changed your mind? If you would rather proceed with the payout, you can still accept the final offer instead of uploading a return label.
+        </div>
+        <div class="quote-card-actions">
+          <button class="button button-secondary portal-inline-button" type="button" data-offer-response="accepted" data-quote-id="${escapeHtml(quote.id)}">Accept final offer instead</button>
+        </div>
+      ` : ""}
       ${labelButton ? `<div class="quote-card-actions">${labelButton}</div>` : ""}
       ${uploadForm}
     </section>
@@ -550,7 +560,7 @@ function renderQuotes(quotes) {
         ${buildShipmentFormMarkup(quote, shipment)}
         ${buildInspectionMarkup(quote)}
         ${buildOfferMarkup(quote, offer)}
-        ${buildReturnLabelMarkup(quote)}
+        ${buildReturnLabelMarkup(quote, offer)}
         ${buildPayoutMarkup(payout)}
         <div class="timeline">${renderTimeline(quote.status)}</div>
       </article>
