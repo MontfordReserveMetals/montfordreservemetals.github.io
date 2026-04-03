@@ -1,5 +1,6 @@
 import { siteConfig, applySiteChrome, initRevealAnimations } from "./site-shell.js";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { formatClaimSummary } from "./metals.js";
 
 const config = siteConfig;
 const supabaseConfig = config.supabase ?? {};
@@ -260,6 +261,42 @@ function formatMailingAddress(record) {
   ].filter(Boolean).join(" ");
 }
 
+function getPurityDisplayLabel(record, prefix = "Tested purity") {
+  if (record?.tested_karat) {
+    return `${prefix} ${record.tested_karat}`;
+  }
+
+  if (record?.tested_purity_label) {
+    return `${prefix} ${record.tested_purity_label}`;
+  }
+
+  return null;
+}
+
+function buildSubmittedItemsMarkup(record) {
+  const itemizedItems = Array.isArray(record?.itemized_items) ? record.itemized_items.filter(Boolean) : [];
+  if (!itemizedItems.length) {
+    return "";
+  }
+
+  return `
+    <section class="quote-card-section">
+      <div class="dashboard-label">Submitted items</div>
+      <div class="builder-summary-list builder-summary-list-embedded">
+        ${itemizedItems.map((item, index) => `
+          <article class="builder-summary-row">
+            <div>
+              <strong>${escapeHtml(`${index + 1}. ${item.description || item.label || "Untitled item"}`)}</strong>
+              <p>${escapeHtml(`${item.purityLabel || item.purity_label || "Purity pending"} · ${Number(item.weightGrams || item.weight_grams || 0).toFixed(2)}g`)}</p>
+            </div>
+            <span>${escapeHtml(formatCurrency(item.estimatedQuote || item.estimated_quote || 0))}</span>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function getSettlementState(record) {
   const method = normalizeSettlementMethod(record?.preferred_settlement);
   const bankRoutingNumber = normalizeDigits(record?.bank_routing_number);
@@ -391,6 +428,7 @@ function renderTimeline(status) {
 function buildInspectionMarkup(quote) {
   const hasInspectionData = Boolean(
     quote.tested_karat ||
+    quote.tested_purity_label ||
     quote.tested_weight_grams ||
     quote.inspection_notes ||
     (quote.authenticity_verdict && quote.authenticity_verdict !== "pending") ||
@@ -403,7 +441,7 @@ function buildInspectionMarkup(quote) {
 
   const details = [
     quote.authenticity_verdict ? `Result ${authenticityLabels[quote.authenticity_verdict] || quote.authenticity_verdict}` : null,
-    quote.tested_karat ? `Tested purity ${quote.tested_karat}` : null,
+    getPurityDisplayLabel(quote),
     quote.tested_weight_grams ? `Tested weight ${Number(quote.tested_weight_grams).toFixed(2)}g` : null,
     quote.return_deadline_at ? `Counterfeit hold deadline ${formatDate(quote.return_deadline_at)}` : null
   ].filter(Boolean);
@@ -806,7 +844,7 @@ function renderQuotes(quotes) {
     const payout = latestByDate(quote.payouts, ["paid_at", "created_at"]);
 
     const metaItems = [
-      `${quote.claimed_karat || "Mixed"} - ${Number(quote.claimed_weight_grams || 0).toFixed(1)}g`,
+      formatClaimSummary(quote),
       `Submitted ${formatDate(quote.submitted_at)}`,
       `Ref ${quote.reference_code}`
     ];
@@ -851,6 +889,7 @@ function renderQuotes(quotes) {
               <div class="quote-submeta">${subMeta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
               <p class="quote-card-note">${escapeHtml(quote.status_detail || "Your case is currently being reviewed.")}</p>
             </section>
+            ${buildSubmittedItemsMarkup(quote)}
             ${buildShipmentSummaryMarkup(shipment)}
             ${buildShipmentFormMarkup(quote, shipment)}
             ${buildInspectionMarkup(quote)}
@@ -913,9 +952,14 @@ async function loadDashboard(supabase, user) {
       id,
       reference_code,
       item_summary,
+      metal_type,
       claimed_karat,
+      claimed_purity,
+      claimed_purity_label,
       claimed_weight_grams,
       estimated_quote,
+      submission_type,
+      itemized_items,
       address_line1,
       city,
       state,
@@ -927,6 +971,8 @@ async function loadDashboard(supabase, user) {
       status_detail,
       submitted_at,
       tested_karat,
+      tested_purity,
+      tested_purity_label,
       tested_weight_grams,
       authenticity_verdict,
       inspection_notes,

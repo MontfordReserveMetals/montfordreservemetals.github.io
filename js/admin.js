@@ -1,5 +1,6 @@
 import { siteConfig, applySiteChrome, initRevealAnimations } from "./site-shell.js";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { formatClaimSummary, getPurityOptions, normalizeMetalType } from "./metals.js";
 
 const config = siteConfig;
 const supabaseConfig = config.supabase ?? {};
@@ -197,6 +198,45 @@ function formatMailingAddress(record) {
     [record?.city, record?.state].filter(Boolean).join(", "),
     record?.postal_code
   ].filter(Boolean).join(" ");
+}
+
+function getPurityDisplayLabel(record, prefix = "Tested") {
+  if (record?.tested_karat) {
+    return `${prefix} ${record.tested_karat}`;
+  }
+
+  if (record?.tested_purity_label) {
+    return `${prefix} ${record.tested_purity_label}`;
+  }
+
+  return null;
+}
+
+function buildSubmittedItemsMarkup(record) {
+  const itemizedItems = Array.isArray(record?.itemized_items) ? record.itemized_items.filter(Boolean) : [];
+  if (!itemizedItems.length) {
+    return "";
+  }
+
+  return `
+    <section class="quote-card-section">
+      <div class="admin-section-head">
+        <h3>Submitted items</h3>
+        <p>Original client lot detail</p>
+      </div>
+      <div class="builder-summary-list builder-summary-list-embedded">
+        ${itemizedItems.map((item, index) => `
+          <article class="builder-summary-row">
+            <div>
+              <strong>${escapeHtml(`${index + 1}. ${item.description || item.label || "Untitled item"}`)}</strong>
+              <p>${escapeHtml(`${item.purityLabel || item.purity_label || "Purity pending"} · ${Number(item.weightGrams || item.weight_grams || 0).toFixed(2)}g`)}</p>
+            </div>
+            <span>${escapeHtml(formatCurrency(item.estimatedQuote || item.estimated_quote || 0))}</span>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
 }
 
 function getSettlementContext(record) {
@@ -537,7 +577,7 @@ function renderCaseRecordMarkup(quote, workflow) {
     shipment?.customer_shipping_cost != null ? `Outbound shipping ${formatCurrency(shipment.customer_shipping_cost)}` : null,
     settlement?.summary ? settlement.summary : null,
     settlement?.detail ? settlement.detail : null,
-    quote.tested_karat ? `Tested ${quote.tested_karat}` : null,
+    getPurityDisplayLabel(quote),
     quote.tested_weight_grams != null ? `${Number(quote.tested_weight_grams).toFixed(2)}g verified` : null,
     quote.authenticity_verdict && quote.authenticity_verdict !== "pending"
       ? authenticityLabels[quote.authenticity_verdict] || formatLabel(quote.authenticity_verdict)
@@ -564,6 +604,67 @@ function renderCaseRecordMarkup(quote, workflow) {
         ${recordItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
       </div>
     </section>
+  `;
+}
+
+function buildInspectionFieldsMarkup(quote) {
+  const metalType = normalizeMetalType(quote.metal_type);
+  const isItemizedLot = quote.submission_type === "itemized";
+
+  if (isItemizedLot) {
+    return `
+      <p class="quote-card-note">
+        This is an itemized mixed lot. Use the verified total weight and inspection notes to document any per-piece adjustments before the final offer is sent.
+      </p>
+      <label>
+        Verified total weight in grams
+        <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+      </label>
+    `;
+  }
+
+  if (metalType === "gold") {
+    return `
+      <label>
+        Tested karat
+        <select name="tested_karat">
+          <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
+          <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
+          <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
+          <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
+          <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
+          <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
+          <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
+        </select>
+      </label>
+
+      <label>
+        Tested weight in grams
+        <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+      </label>
+    `;
+  }
+
+  const purityOptions = getPurityOptions(metalType);
+  const selectedPurityValue = purityOptions.find((option) =>
+    option.label === quote.tested_purity_label || Number(option.purity) === Number(quote.tested_purity)
+  )?.value ?? purityOptions[0]?.value ?? "";
+
+  return `
+    <label>
+      Tested purity
+      <select name="tested_purity_option">
+        ${purityOptions.map((option) => {
+          const selected = option.value === selectedPurityValue ? " selected" : "";
+          return `<option value="${option.value}"${selected}>${escapeHtml(option.label)}</option>`;
+        }).join("")}
+      </select>
+    </label>
+
+    <label>
+      Tested weight in grams
+      <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+    </label>
   `;
 }
 
@@ -635,23 +736,7 @@ function renderCurrentStepMarkup(quote, workflow) {
         <form class="admin-inspection-form" data-quote-id="${escapeHtml(quote.id)}">
           <fieldset class="admin-form-fieldset">
             <div class="admin-form-grid">
-              <label>
-                Tested karat
-                <select name="tested_karat">
-                  <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
-                  <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
-                  <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
-                  <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
-                  <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
-                  <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
-                  <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
-                </select>
-              </label>
-
-              <label>
-                Tested weight in grams
-                <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
-              </label>
+              ${buildInspectionFieldsMarkup(quote)}
 
               <label>
                 Authenticity verdict
@@ -709,7 +794,7 @@ function renderCurrentStepMarkup(quote, workflow) {
           <p>Prepare and send the final offer</p>
         </div>
         <div class="quote-submeta">
-          <span>${escapeHtml(quote.tested_karat ? `Tested ${quote.tested_karat}` : "Tested karat pending")}</span>
+          <span>${escapeHtml(getPurityDisplayLabel(quote) || "Tested purity pending")}</span>
           <span>${escapeHtml(quote.tested_weight_grams != null ? `${Number(quote.tested_weight_grams).toFixed(2)}g verified` : "Tested weight pending")}</span>
           <span>${escapeHtml(authenticityLabels[quote.authenticity_verdict || "pending"] || "Pending review")}</span>
         </div>
@@ -1071,7 +1156,7 @@ function renderIntakeList() {
         </div>
         <p>${escapeHtml(intake.item_summary)}</p>
         <div class="intake-card-meta">
-          <span>${escapeHtml(intake.claimed_karat || "Mixed")} · ${escapeHtml(Number(intake.claimed_weight_grams || 0).toFixed(1))}g</span>
+          <span>${escapeHtml(formatClaimSummary(intake))}</span>
           <span>${escapeHtml(formatCurrency(intake.estimated_quote))}</span>
         </div>
       </button>
@@ -1129,8 +1214,8 @@ function renderSelectedIntake() {
       <dd>${escapeHtml(intakeSettlement.detail)}</dd>
     </div>
     <div>
-      <dt>Claimed purity</dt>
-      <dd>${escapeHtml(intake.claimed_karat || "Mixed")}</dd>
+      <dt>Claimed material</dt>
+      <dd>${escapeHtml(formatClaimSummary(intake))}</dd>
     </div>
     <div>
       <dt>Claimed weight</dt>
@@ -1145,6 +1230,22 @@ function renderSelectedIntake() {
   selectedIntakeNotes.innerHTML = `
     <strong>Client notes</strong>
     <p>${escapeHtml(intake.notes || "No client notes were submitted.")}</p>
+    ${Array.isArray(intake.itemized_items) && intake.itemized_items.length ? `
+      <div class="admin-inline-items-block">
+        <strong>Submitted items</strong>
+        <div class="builder-summary-list builder-summary-list-embedded">
+          ${intake.itemized_items.map((item, index) => `
+            <article class="builder-summary-row">
+              <div>
+                <strong>${escapeHtml(`${index + 1}. ${item.description || item.label || "Untitled item"}`)}</strong>
+                <p>${escapeHtml(`${item.purityLabel || item.purity_label || "Purity pending"} · ${Number(item.weightGrams || item.weight_grams || 0).toFixed(2)}g`)}</p>
+              </div>
+              <span>${escapeHtml(formatCurrency(item.estimatedQuote || item.estimated_quote || 0))}</span>
+            </article>
+          `).join("")}
+        </div>
+      </div>
+    ` : ""}
   `;
 
   const linkedQuote = state.quotes.find((quote) => quote.source_intake_request_id === intake.id) ?? null;
@@ -1220,7 +1321,7 @@ function renderQuoteList() {
               <div class="quote-meta">
                 <span>${escapeHtml(quote.reference_code)}</span>
                 <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
-                <span>${escapeHtml(quote.claimed_karat || "Mixed")} · ${escapeHtml(Number(quote.claimed_weight_grams || 0).toFixed(1))}g</span>
+                <span>${escapeHtml(formatClaimSummary(quote))}</span>
               </div>
             </div>
             <div class="case-accordion-side">
@@ -1255,6 +1356,7 @@ function renderQuoteList() {
                 </div>
               </div>
             </section>
+            ${buildSubmittedItemsMarkup(quote)}
             ${renderCaseRecordMarkup(quote, workflow)}
             ${renderCurrentStepMarkup(quote, workflow)}
           </div>
@@ -1279,8 +1381,12 @@ async function loadIntakeRequests() {
       metal_type,
       item_summary,
       claimed_karat,
+      claimed_purity,
+      claimed_purity_label,
       claimed_weight_grams,
       estimated_quote,
+      submission_type,
+      itemized_items,
       preferred_settlement,
       bank_routing_number,
       bank_account_number,
@@ -1342,9 +1448,14 @@ async function loadSelectedIntakeData(intakeId) {
         reference_code,
         source_intake_request_id,
         item_summary,
+        metal_type,
         claimed_karat,
+        claimed_purity,
+        claimed_purity_label,
         claimed_weight_grams,
         estimated_quote,
+        submission_type,
+        itemized_items,
         address_line1,
         city,
         state,
@@ -1355,6 +1466,8 @@ async function loadSelectedIntakeData(intakeId) {
         status,
         status_detail,
         tested_karat,
+        tested_purity,
+        tested_purity_label,
         tested_weight_grams,
         authenticity_verdict,
         inspection_notes,
@@ -1506,9 +1619,23 @@ async function saveInspectionForm(form, action = "save") {
   const formData = new FormData(form);
   const authenticityVerdict = String(formData.get("authenticity_verdict") || "pending");
   const returnDeadlineInput = String(formData.get("return_deadline_at") || "").trim();
+  const metalType = normalizeMetalType(quote.metal_type);
+  const submissionType = String(quote.submission_type || "single");
+  const testedPurityOption = String(formData.get("tested_purity_option") || "").trim();
+  const testedPuritySelection = testedPurityOption
+    ? getPurityOptions(metalType).find((option) => option.value === testedPurityOption) ?? null
+    : null;
 
   const payload = {
-    tested_karat: String(formData.get("tested_karat") || "").trim() || null,
+    tested_karat: metalType === "gold" && submissionType !== "itemized"
+      ? String(formData.get("tested_karat") || "").trim() || null
+      : null,
+    tested_purity: metalType !== "gold" && submissionType !== "itemized" && testedPuritySelection
+      ? Number(testedPuritySelection.purity.toFixed(4))
+      : null,
+    tested_purity_label: metalType !== "gold" && submissionType !== "itemized" && testedPuritySelection
+      ? testedPuritySelection.label
+      : null,
     tested_weight_grams: parseOptionalNumber(formData.get("tested_weight_grams")),
     authenticity_verdict: authenticityVerdict,
     inspection_notes: String(formData.get("inspection_notes") || "").trim() || null,
@@ -1904,9 +2031,13 @@ async function initAdminDashboard() {
       source_intake_request_id: intake.id,
       metal_type: intake.metal_type || "gold",
       item_summary: String(formData.get("item_summary") || "").trim(),
-      claimed_karat: String(formData.get("claimed_karat") || "mixed"),
+      claimed_karat: intake.claimed_karat || String(formData.get("claimed_karat") || "mixed"),
+      claimed_purity: intake.claimed_purity != null ? Number(intake.claimed_purity) : null,
+      claimed_purity_label: intake.claimed_purity_label || null,
       claimed_weight_grams: Number(formData.get("claimed_weight_grams") || 0),
       estimated_quote: Number(formData.get("estimated_quote") || 0),
+      submission_type: intake.submission_type || "single",
+      itemized_items: intake.itemized_items || null,
       address_line1: intake.address_line1 || null,
       city: intake.city || null,
       state: intake.state || null,

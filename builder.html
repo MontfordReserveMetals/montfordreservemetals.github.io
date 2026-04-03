@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Montford Reserve Metals | Itemized Quote Builder</title>
+  <meta
+    name="description"
+    content="Build a saved multi-item estimate for mixed gold, silver, platinum, and palladium lots with Montford Reserve Metals."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Montford Reserve Metals home">
+        <span class="brand-mark" data-brand-mark>MR</span>
+        <span class="brand-copy">
+          <strong data-brand-name>Montford Reserve Metals</strong>
+          <span data-brand-descriptor>Buyers of Gold, Silver & Fine Jewelry</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a href="index.html#legacy">Legacy</a>
+        <a href="index.html#process">Process</a>
+        <a href="index.html#estimator">Single item quote</a>
+        <a href="process.html">Protocol</a>
+        <a href="portal.html">Portal</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="section reveal builder-hero-section">
+        <div class="section-heading">
+          <p class="section-kicker">Itemized Quote Builder</p>
+          <h1>For larger mixed lots, add each item separately and save your progress.</h1>
+          <p>
+            Use this builder when the file includes multiple pieces across different metals. Draft progress is saved on
+            this browser so the client can return later, edit the list, and submit once everything is ready.
+          </p>
+        </div>
+
+        <div class="builder-layout">
+          <form class="estimator-card builder-card" id="itemized-builder-form">
+            <div class="builder-intro">
+              <strong>How this builder works</strong>
+              <p>
+                Add each item with its metal, purity, and weight. The office will receive the full itemized list together
+                with one combined estimate request.
+              </p>
+            </div>
+
+            <section class="builder-section">
+              <div class="builder-section-head">
+                <div>
+                  <p class="panel-topline">Step 1</p>
+                  <h2>Itemized metals list</h2>
+                </div>
+                <button class="button button-secondary" type="button" id="add-builder-item">Add another item</button>
+              </div>
+              <div class="builder-items" id="builder-items"></div>
+              <div class="builder-actions-row">
+                <button class="button button-secondary" type="button" id="clear-builder-draft">Clear saved draft</button>
+                <span class="builder-draft-state" id="builder-draft-state">Draft autosave is ready.</span>
+              </div>
+            </section>
+
+            <div class="form-divider" aria-hidden="true"></div>
+
+            <section class="builder-section">
+              <div class="builder-section-head">
+                <div>
+                  <p class="panel-topline">Step 2</p>
+                  <h2>Client and settlement details</h2>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Client name
+                  <input id="builder-client-name" name="client-name" type="text" placeholder="Alex Mercer" required>
+                </label>
+
+                <label>
+                  Email
+                  <input id="builder-client-email" name="client-email" type="email" placeholder="client@example.com" required>
+                </label>
+
+                <label>
+                  Phone
+                  <input id="builder-client-phone" name="client-phone" type="tel" placeholder="(561) 555-0188" required>
+                </label>
+
+                <label>
+                  Preferred settlement
+                  <select id="builder-settlement-preference" name="settlement-preference" required>
+                    <option value="Bank wire">Bank wire</option>
+                    <option value="ACH">ACH</option>
+                    <option value="Check">Check</option>
+                    <option value="Undecided" selected>Undecided</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-grid">
+                <label class="form-span-2">
+                  Mailing address
+                  <input
+                    id="builder-address-line1"
+                    name="address-line1"
+                    type="text"
+                    placeholder="12 East 74th Street"
+                    autocomplete="street-address"
+                    required
+                  >
+                </label>
+
+                <label>
+                  City
+                  <input id="builder-address-city" name="address-city" type="text" placeholder="New York" autocomplete="address-level2" required>
+                </label>
+
+                <label>
+                  State
+                  <input id="builder-address-state" name="address-state" type="text" placeholder="NY" autocomplete="address-level1" required>
+                </label>
+
+                <label>
+                  ZIP code
+                  <input id="builder-address-postal-code" name="address-postal-code" type="text" placeholder="10021" autocomplete="postal-code" required>
+                </label>
+              </div>
+
+              <div class="form-grid hidden" id="builder-settlement-bank-fields">
+                <label>
+                  Routing number
+                  <input
+                    id="builder-bank-routing-number"
+                    name="bank-routing-number"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="021000021"
+                  >
+                </label>
+
+                <label>
+                  Account number
+                  <input
+                    id="builder-bank-account-number"
+                    name="bank-account-number"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="000123456789"
+                  >
+                </label>
+              </div>
+
+              <label class="form-span-2">
+                Private notes
+                <textarea
+                  id="builder-client-notes"
+                  name="client-notes"
+                  rows="4"
+                  placeholder="Collection background, urgency, payout expectations, or anything else the office should review."
+                ></textarea>
+              </label>
+            </section>
+
+            <input class="honeypot" id="builder-website" name="website" type="text" tabindex="-1" autocomplete="off">
+
+            <div class="form-actions">
+              <button class="button button-primary" id="builder-request-button" type="submit">Send itemized request</button>
+              <a class="button button-secondary" href="index.html#estimator">Back to single item quote</a>
+            </div>
+
+            <div class="form-status warning" id="builder-request-status" role="status" aria-live="polite">
+              Live itemized private-review intake will appear here once the office connection is enabled.
+            </div>
+          </form>
+
+          <aside class="estimate-output builder-summary">
+            <div class="output-topline">Combined estimated payout</div>
+            <div class="estimate-amount" id="builder-estimate-amount">$0</div>
+            <p class="estimate-message" id="builder-estimate-summary">
+              Add each item in the list to see the combined estimated amount the client would receive if the submitted details are confirmed on review.
+            </p>
+            <div class="builder-summary-list" id="builder-summary-list"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <strong data-brand-name>Montford Reserve Metals</strong>
+        <p>Private office for estate jewelry, bullion, inherited gold, silver, and fine metal assets.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <a href="process.html">Process</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="portal.html">Portal</a>
+      </nav>
+      <div class="footer-meta">
+        <a data-contact-email href="mailto:privateoffice@example.com">privateoffice@example.com</a>
+        <a data-contact-phone href="tel:+15615550188">(561) 555-0188</a>
+        <span>&copy; <span id="current-year"></span> <span data-brand-name>Montford Reserve Metals</span></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/site-config.js"></script>
+  <script type="module" src="js/builder.js"></script>
+</body>
+</html>

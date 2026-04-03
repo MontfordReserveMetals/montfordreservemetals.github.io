@@ -293,6 +293,23 @@
 
             <div class="form-grid">
               <label>
+                Metal
+                <select id="metal-type" name="metal-type">
+                  <option value="gold" selected>Gold</option>
+                  <option value="silver">Silver</option>
+                  <option value="platinum">Platinum</option>
+                  <option value="palladium">Palladium</option>
+                </select>
+              </label>
+
+              <label>
+                Weight in grams
+                <input id="weight" name="weight" type="number" min="0" step="0.1" value="42.0" required>
+              </label>
+            </div>
+
+            <div class="form-grid">
+              <label id="gold-karat-field">
                 Karat
                 <select id="karat" name="karat">
                   <option value="10K">10K</option>
@@ -303,13 +320,20 @@
                 </select>
               </label>
 
-              <label>
-                Weight in grams
-                <input id="weight" name="weight" type="number" min="0" step="0.1" value="42.0" required>
+              <label class="hidden" id="purity-field">
+                Purity
+                <select id="purity-selection" name="purity-selection"></select>
               </label>
             </div>
 
-            <input id="house-price" name="house-price" type="hidden">
+            <div class="builder-callout">
+              <strong>Multiple items or a mixed lot?</strong>
+              <p>
+                If the client has several pieces across different metals, use the itemized quote builder to add each item
+                separately and receive one combined estimate.
+              </p>
+              <a class="button button-secondary" href="builder.html">Open itemized quote builder</a>
+            </div>
 
             <div class="form-divider" aria-hidden="true"></div>
 
@@ -423,10 +447,10 @@
             <div class="output-topline">Estimated client payout</div>
             <div class="estimate-amount" id="estimate-amount">$0</div>
             <p class="estimate-message" id="estimate-summary">
-              Based on the submitted details, this panel shows the estimated amount the client would receive if the description is confirmed on review. Submit promptly to help lock in this estimate before gold prices change.
+              Based on the submitted details, this panel shows the estimated amount the client would receive if the description is confirmed on review. Submit promptly to help lock in this estimate before market prices change.
             </p>
             <p class="estimate-note">
-              Gold prices can move quickly. Final offers still follow inspection, verification, and office approval.
+              Precious-metals prices can move quickly. Final offers still follow inspection, verification, and office approval.
             </p>
           </aside>
         </div>

@@ -819,6 +819,28 @@ h3 {
   background: linear-gradient(90deg, transparent, rgba(98, 76, 41, 0.26), transparent);
 }
 
+.builder-callout {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.15rem 1.2rem;
+  border-radius: 20px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: linear-gradient(180deg, rgba(255, 251, 244, 0.96), rgba(246, 237, 223, 0.92));
+}
+
+.builder-callout strong {
+  color: #3b2d1a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.76rem;
+}
+
+.builder-callout p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
 .estimator-card label,
 .auth-form label {
   display: grid;
@@ -912,6 +934,149 @@ h3 {
   border-top: 1px solid rgba(247, 241, 231, 0.12);
   color: rgba(247, 241, 231, 0.7);
   line-height: 1.65;
+}
+
+.builder-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.builder-card,
+.builder-summary {
+  position: sticky;
+  top: 1.2rem;
+}
+
+.builder-intro {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.builder-intro strong {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.76rem;
+  color: #6f5121;
+}
+
+.builder-intro p {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--text-soft);
+}
+
+.builder-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.builder-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.builder-section-head h2 {
+  margin: 0.2rem 0 0;
+  font-size: clamp(1.55rem, 3vw, 2.1rem);
+}
+
+.builder-items {
+  display: grid;
+  gap: 1rem;
+}
+
+.builder-item-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-radius: 24px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: rgba(255, 251, 245, 0.9);
+}
+
+.builder-item-head,
+.builder-item-footer,
+.builder-actions-row,
+.builder-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.builder-item-head strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.builder-item-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.builder-item-footer {
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(98, 76, 41, 0.1);
+}
+
+.builder-item-copy,
+.builder-draft-state {
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.builder-item-estimate {
+  color: #397f52;
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.builder-summary {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.builder-summary-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.builder-summary-list-embedded {
+  margin-top: 0.35rem;
+}
+
+.builder-summary-row {
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(247, 241, 231, 0.12);
+  background: rgba(12, 19, 16, 0.16);
+}
+
+.builder-summary-list-embedded .builder-summary-row {
+  background: rgba(98, 76, 41, 0.04);
+  border-color: rgba(98, 76, 41, 0.1);
+}
+
+.builder-summary-row strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.builder-summary-row p {
+  margin: 0;
+  color: inherit;
+  opacity: 0.72;
+}
+
+.builder-summary-row span {
+  color: #79db92;
+  font-weight: 700;
 }
 
 .formula-list {
@@ -1991,6 +2156,7 @@ h3 {
   .hero-grid,
   .split-grid,
   .estimator-grid,
+  .builder-layout,
   .portal-preview,
   .portal-layout,
   .admin-layout,
@@ -2017,6 +2183,7 @@ h3 {
     grid-template-columns: 1fr;
   }
 
+  .builder-item-grid,
   .admin-form-grid,
   .workflow-summary-grid,
   .detail-list,
@@ -2044,6 +2211,15 @@ h3 {
 
   .case-accordion-side {
     justify-content: flex-start;
+  }
+
+  .builder-section-head,
+  .builder-item-head,
+  .builder-item-footer,
+  .builder-actions-row,
+  .builder-summary-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .offer-recovery-actions {
@@ -2113,7 +2289,9 @@ h3 {
   .button,
   .admin-filter-bar .button,
   .admin-inline-form .button,
-  .quote-card-actions .button {
+  .quote-card-actions .button,
+  .builder-section-head .button,
+  .builder-remove-button {
     width: 100%;
   }
 

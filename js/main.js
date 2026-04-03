@@ -1,27 +1,27 @@
 import { siteConfig, applySiteChrome, initRevealAnimations } from "./site-shell.js";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import {
+  getDefaultPuritySelection,
+  getMetalLabel,
+  getPurityOptions,
+  getPuritySelection,
+  normalizeMetalType
+} from "./metals.js";
 
 const config = siteConfig;
 const founderName = config.founder?.name ?? "James Montford";
 const brandName = config.brand?.name ?? "Montford Reserve Metals";
-
-const defaultPurityMap = {
-  "10K": 0.417,
-  "14K": 0.585,
-  "18K": 0.75,
-  "22K": 0.916,
-  "24K": 0.999
-};
-
-const purityMap = config.valuation?.purityByKarat ?? defaultPurityMap;
-const defaultHousePrice = Number(config.valuation?.houseBuyPricePerOunce ?? 0);
 const supabaseConfig = config.supabase ?? {};
 const estimateFunctionName = supabaseConfig.estimateFunctionName || "estimate-payout";
 
 applySiteChrome();
 
 const estimatorForm = document.getElementById("estimator-form");
-const housePriceInput = document.getElementById("house-price");
+const metalTypeField = document.getElementById("metal-type");
+const goldKaratField = document.getElementById("gold-karat-field");
+const karatField = document.getElementById("karat");
+const purityField = document.getElementById("purity-field");
+const puritySelectionField = document.getElementById("purity-selection");
 const estimateAmount = document.getElementById("estimate-amount");
 const estimateSummary = document.getElementById("estimate-summary");
 const requestStatus = document.getElementById("request-status");
@@ -36,10 +36,6 @@ let latestEstimate = null;
 let estimateRequestSequence = 0;
 let estimateRefreshTimer = null;
 
-if (housePriceInput && !housePriceInput.value) {
-  housePriceInput.value = defaultHousePrice.toFixed(2);
-}
-
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -52,6 +48,42 @@ function normalizeDigits(value) {
 
 function settlementRequiresBanking(method) {
   return ["Bank wire", "ACH"].includes(String(method || "").trim());
+}
+
+function setRequestStatus(message, tone = "warning") {
+  if (!requestStatus) {
+    return;
+  }
+
+  requestStatus.textContent = message;
+  requestStatus.className = `form-status ${tone}`;
+}
+
+function setEstimateDisplay(amount, summary, fallbackAmount = amount) {
+  if (estimateAmount) {
+    estimateAmount.textContent = currencyFormatter.format(Number(fallbackAmount || 0));
+  }
+
+  if (estimateSummary) {
+    estimateSummary.textContent = summary;
+  }
+}
+
+function setEstimateLoading(message = "Updating the payout estimate from the latest market snapshot...") {
+  if (estimateSummary) {
+    estimateSummary.textContent = message;
+  }
+}
+
+function isSupabaseConfigured() {
+  const { url, anonKey } = supabaseConfig;
+
+  return Boolean(
+    url &&
+    anonKey &&
+    !url.includes("YOUR_SUPABASE_URL") &&
+    !anonKey.includes("YOUR_SUPABASE_ANON_KEY")
+  );
 }
 
 function syncRequestButtonState() {
@@ -84,65 +116,99 @@ function syncSettlementFieldVisibility() {
   syncRequestButtonState();
 }
 
+function populatePurityOptions(metalType) {
+  if (!puritySelectionField) {
+    return;
+  }
+
+  const currentValue = puritySelectionField.value;
+  const options = getPurityOptions(metalType);
+  puritySelectionField.innerHTML = options.map((option) => {
+    const selected = option.value === currentValue ? " selected" : "";
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join("");
+
+  if (!options.some((option) => option.value === currentValue)) {
+    puritySelectionField.value = options[0]?.value ?? "";
+  }
+}
+
+function syncMetalFieldVisibility() {
+  const metalType = normalizeMetalType(metalTypeField?.value);
+  const isGold = metalType === "gold";
+
+  goldKaratField?.classList.toggle("hidden", !isGold);
+  purityField?.classList.toggle("hidden", isGold);
+
+  if (karatField) {
+    karatField.required = isGold;
+  }
+
+  if (puritySelectionField) {
+    puritySelectionField.required = !isGold;
+  }
+
+  populatePurityOptions(metalType);
+  syncRequestButtonState();
+}
+
 function getEstimateContext() {
-  const karat = document.getElementById("karat")?.value ?? "14K";
-  const itemSummary = document.getElementById("item-summary")?.value?.trim() || "Gold items";
+  const metalType = normalizeMetalType(metalTypeField?.value);
   const weight = Number(document.getElementById("weight")?.value ?? 0);
-  const housePrice = Number(document.getElementById("house-price")?.value ?? 0);
-  const purity = Number(purityMap[karat] ?? 0);
+  const itemSummary = document.getElementById("item-summary")?.value?.trim() || `${getMetalLabel(metalType)} items`;
 
-  const estimate = weight > 0 && housePrice > 0
-    ? (weight * purity * housePrice) / 31.1035
-    : 0;
+  if (metalType === "gold") {
+    const selection = getPuritySelection("gold", karatField?.value);
+    return {
+      itemSummary,
+      metalType,
+      metalLabel: getMetalLabel(metalType),
+      karat: selection.karat ?? "14K",
+      purity: selection.purity,
+      purityLabel: selection.label,
+      weight
+    };
+  }
 
+  const selection = getPuritySelection(metalType, puritySelectionField?.value);
   return {
     itemSummary,
-    metalType: "gold",
-    karat,
-    weight,
-    housePrice,
-    estimate
+    metalType,
+    metalLabel: getMetalLabel(metalType),
+    karat: null,
+    purity: selection.purity,
+    purityLabel: selection.label,
+    weight
   };
 }
 
 function buildEstimateContextKey(baseContext) {
-  return `${baseContext.metalType}:${baseContext.karat}:${baseContext.weight.toFixed(2)}`;
+  return [
+    baseContext.metalType,
+    baseContext.karat || "",
+    Number(baseContext.purity || 0).toFixed(4),
+    Number(baseContext.weight || 0).toFixed(2)
+  ].join(":");
 }
 
-function renderManualEstimate(baseContext) {
+function renderUnavailableEstimate(baseContext) {
   setEstimateDisplay(
-    baseContext.estimate,
-    `Based on the submitted details, the estimated amount you would receive is ${currencyFormatter.format(baseContext.estimate)}. Submit promptly to help lock in this estimate before gold prices change.`,
-    baseContext.estimate
+    0,
+    `The live ${baseContext.metalLabel.toLowerCase()} estimate is temporarily unavailable. Submit the request for manual office review and we will respond directly.`,
+    0
   );
-}
-
-function setEstimateDisplay(amount, summary, fallbackAmount = amount) {
-  if (estimateAmount) {
-    estimateAmount.textContent = currencyFormatter.format(fallbackAmount ?? 0);
-  }
-
-  if (estimateSummary) {
-    estimateSummary.textContent = summary;
-  }
-}
-
-function setEstimateLoading(message = "Updating the payout estimate from the latest market snapshot...") {
-  if (estimateSummary) {
-    estimateSummary.textContent = message;
-  }
 }
 
 function scheduleEstimateRefresh() {
   latestEstimate = null;
 
-  if (!supabase) {
-    renderManualEstimate(getEstimateContext());
-    return;
-  }
-
   if (estimateRefreshTimer) {
     window.clearTimeout(estimateRefreshTimer);
+  }
+
+  if (!supabase) {
+    renderUnavailableEstimate(getEstimateContext());
+    return;
   }
 
   setEstimateLoading();
@@ -157,12 +223,12 @@ async function refreshEstimate({ showLoading = true } = {}) {
   const contextKey = buildEstimateContextKey(baseContext);
 
   if (!supabase) {
-    renderManualEstimate(baseContext);
+    renderUnavailableEstimate(baseContext);
     latestEstimate = {
-      estimatedQuote: Number(baseContext.estimate.toFixed(2)),
-      marketSpotPerOunce: Number(baseContext.housePrice.toFixed(2)),
+      estimatedQuote: 0,
+      marketSpotPerOunce: 0,
       marketSnapshotAt: null,
-      marketSource: "manual",
+      marketSource: null,
       contextKey
     };
     return latestEstimate;
@@ -179,12 +245,19 @@ async function refreshEstimate({ showLoading = true } = {}) {
     setEstimateLoading();
   }
 
+  const requestBody = {
+    metalType: baseContext.metalType,
+    weightGrams: baseContext.weight
+  };
+
+  if (baseContext.metalType === "gold") {
+    requestBody.karat = baseContext.karat;
+  } else {
+    requestBody.purity = baseContext.purity;
+  }
+
   const { data, error } = await supabase.functions.invoke(estimateFunctionName, {
-    body: {
-      metalType: baseContext.metalType,
-      karat: baseContext.karat,
-      weightGrams: baseContext.weight
-    }
+    body: requestBody
   });
 
   if (requestSequence !== estimateRequestSequence) {
@@ -192,11 +265,7 @@ async function refreshEstimate({ showLoading = true } = {}) {
   }
 
   if (error) {
-    setEstimateDisplay(
-      0,
-      "The live payout estimate is temporarily unavailable. Please wait a moment or submit your request for manual review.",
-      0
-    );
+    renderUnavailableEstimate(baseContext);
     console.error(error);
     return null;
   }
@@ -205,7 +274,7 @@ async function refreshEstimate({ showLoading = true } = {}) {
     estimatedQuote: Number(data.estimatedQuote ?? 0),
     marketSpotPerOunce: Number(data.marketSpotPerOunce ?? 0),
     marketSnapshotAt: data.marketSnapshotAt ?? null,
-    marketSource: data.marketSource ?? "metals.dev",
+    marketSource: data.marketSource ?? null,
     contextKey
   };
 
@@ -219,28 +288,10 @@ async function refreshEstimate({ showLoading = true } = {}) {
   return latestEstimate;
 }
 
-function setRequestStatus(message, tone = "warning") {
-  if (!requestStatus) {
-    return;
-  }
-
-  requestStatus.textContent = message;
-  requestStatus.className = `form-status ${tone}`;
-}
-
-function isSupabaseConfigured() {
-  const { url, anonKey } = supabaseConfig;
-
-  return Boolean(
-    url &&
-    anonKey &&
-    !url.includes("YOUR_SUPABASE_URL") &&
-    !anonKey.includes("YOUR_SUPABASE_ANON_KEY")
-  );
-}
-
 function resetLeadFields() {
   [
+    "item-summary",
+    "weight",
     "client-name",
     "client-email",
     "client-phone",
@@ -254,37 +305,63 @@ function resetLeadFields() {
     "website"
   ].forEach((fieldId) => {
     const field = document.getElementById(fieldId);
-    if (field) {
-      field.value = "";
+    if (!field) {
+      return;
     }
+
+    if (field instanceof HTMLInputElement && field.type === "number") {
+      field.value = fieldId === "weight" ? "42.0" : "";
+      return;
+    }
+
+    field.value = "";
   });
 
-  const settlementPreference = document.getElementById("settlement-preference");
-  if (settlementPreference) {
-    settlementPreference.value = "Undecided";
+  if (metalTypeField) {
+    metalTypeField.value = "gold";
   }
 
+  if (karatField) {
+    karatField.value = "14K";
+  }
+
+  if (settlementPreferenceField) {
+    settlementPreferenceField.value = "Undecided";
+  }
+
+  syncMetalFieldVisibility();
   syncSettlementFieldVisibility();
   syncRequestButtonState();
 }
 
 if (isSupabaseConfigured()) {
   supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
-  setRequestStatus(`Live intake is enabled. Market-backed payout estimates and new private review requests will be stored for ${founderName}'s office review.`, "success");
+  setRequestStatus(
+    `Live intake is enabled. Market-backed payout estimates and new private review requests will be stored for ${founderName}'s office review.`,
+    "success"
+  );
   setEstimateLoading("Loading the latest payout estimate...");
 }
 
 if (estimatorForm) {
-  const estimateFields = ["karat", "weight"];
+  syncMetalFieldVisibility();
+  syncSettlementFieldVisibility();
+  syncRequestButtonState();
+  scheduleEstimateRefresh();
 
-  estimateFields.forEach((fieldId) => {
+  ["metal-type", "karat", "purity-selection", "weight"].forEach((fieldId) => {
     const field = document.getElementById(fieldId);
     if (!field) {
       return;
     }
 
     ["change", "input"].forEach((eventName) => {
-      field.addEventListener(eventName, scheduleEstimateRefresh);
+      field.addEventListener(eventName, () => {
+        if (fieldId === "metal-type") {
+          syncMetalFieldVisibility();
+        }
+        scheduleEstimateRefresh();
+      });
     });
   });
 
@@ -295,6 +372,7 @@ if (estimatorForm) {
   estimatorForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    syncMetalFieldVisibility();
     syncSettlementFieldVisibility();
 
     if (!estimatorForm.reportValidity()) {
@@ -371,21 +449,24 @@ if (estimatorForm) {
       postal_code: postalCode,
       metal_type: baseContext.metalType,
       item_summary: baseContext.itemSummary,
-      claimed_karat: baseContext.karat,
+      claimed_karat: baseContext.metalType === "gold" ? baseContext.karat : "mixed",
+      claimed_purity: Number(baseContext.purity.toFixed(4)),
+      claimed_purity_label: baseContext.purityLabel,
       claimed_weight_grams: Number(baseContext.weight.toFixed(2)),
-      house_buy_price_per_ounce: supabase ? null : Number(baseContext.housePrice.toFixed(2)),
-      market_spot_per_ounce: estimateContext.marketSpotPerOunce
-        ? Number(estimateContext.marketSpotPerOunce.toFixed(2))
-        : null,
-      market_source: estimateContext.marketSource || null,
-      market_snapshot_at: estimateContext.marketSnapshotAt || null,
       estimated_quote: Number(estimateContext.estimatedQuote.toFixed(2)),
       preferred_settlement: preferredSettlement,
       bank_routing_number: settlementRequiresBanking(preferredSettlement) ? bankRoutingNumber : null,
       bank_account_number: settlementRequiresBanking(preferredSettlement) ? bankAccountNumber : null,
       notes: notes || null,
       source: "website",
-      source_page: window.location.pathname
+      source_page: window.location.pathname,
+      submission_type: "single",
+      itemized_items: null,
+      market_spot_per_ounce: estimateContext.marketSpotPerOunce
+        ? Number(estimateContext.marketSpotPerOunce.toFixed(2))
+        : null,
+      market_source: estimateContext.marketSource || null,
+      market_snapshot_at: estimateContext.marketSnapshotAt || null
     };
 
     const { error } = await supabase
@@ -413,13 +494,8 @@ if (estimatorForm) {
       "success"
     );
     resetLeadFields();
+    scheduleEstimateRefresh();
   });
-}
-
-if (estimatorForm) {
-  syncSettlementFieldVisibility();
-  syncRequestButtonState();
-  scheduleEstimateRefresh();
 }
 
 initRevealAnimations();
