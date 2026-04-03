@@ -938,15 +938,21 @@ h3 {
 
 .builder-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
 
 .builder-summary {
-  position: sticky;
-  top: 6.8rem;
+  position: static;
   align-self: start;
+  width: min(100%, 760px);
+  justify-self: end;
+  padding: 1.35rem 1.4rem;
+  border: 1px solid rgba(98, 76, 41, 0.14);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(17, 26, 22, 0.97), rgba(24, 35, 29, 0.96));
+  box-shadow: 0 22px 44px rgba(21, 24, 19, 0.18);
 }
 
 .builder-intro {
@@ -1043,9 +1049,10 @@ h3 {
 }
 
 .builder-summary .estimate-amount {
-  font-size: clamp(2.5rem, 4.8vw, 4.1rem);
+  font-size: clamp(2.2rem, 4.2vw, 3.4rem);
   line-height: 0.95;
-  max-width: 10ch;
+  max-width: 8ch;
+  text-wrap: balance;
 }
 
 .builder-summary .estimate-message {
@@ -1055,6 +1062,12 @@ h3 {
 .builder-summary-list {
   display: grid;
   gap: 0.9rem;
+}
+
+.builder-summary > .builder-summary-list {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
 }
 
 .builder-summary-list-embedded {
