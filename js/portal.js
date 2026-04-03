@@ -435,6 +435,7 @@ function buildReturnLabelMarkup(quote, offer) {
   }
 
   const canAcceptAfterDecline = Boolean(offer?.declined_at && !offer?.accepted_at);
+  const totalOfferAmount = Number(offer?.final_offer || 0) + Number(offer?.shipping_reimbursement_amount || 0);
 
   const details = [
     quote.return_label_due_at ? `Upload return label by ${formatDate(quote.return_label_due_at)}` : null,
@@ -471,11 +472,16 @@ function buildReturnLabelMarkup(quote, offer) {
       <div class="dashboard-label">Return label</div>
       <div class="quote-submeta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
       ${canAcceptAfterDecline ? `
-        <div class="admin-step-note">
-          Changed your mind? If you would rather proceed with the payout, you can still accept the final offer instead of uploading a return label.
-        </div>
-        <div class="quote-card-actions">
-          <button class="button button-secondary portal-inline-button" type="button" data-offer-response="accepted" data-quote-id="${escapeHtml(quote.id)}">Accept final offer instead</button>
+        <div class="offer-recovery-callout">
+          <p class="offer-recovery-title">Changed your mind?</p>
+          <p class="offer-recovery-copy">If you would rather proceed with the payout, you can still accept the final offer instead of uploading a return label.</p>
+          <div class="offer-recovery-actions">
+            <button class="button button-recovery portal-inline-button" type="button" data-offer-response="accepted" data-quote-id="${escapeHtml(quote.id)}">Accept final offer instead</button>
+            <div class="offer-recovery-amount-block">
+              <span class="offer-recovery-amount-label">Total payout</span>
+              <strong class="offer-recovery-amount">${escapeHtml(formatCurrency(totalOfferAmount))}</strong>
+            </div>
+          </div>
         </div>
       ` : ""}
       ${labelButton ? `<div class="quote-card-actions">${labelButton}</div>` : ""}
