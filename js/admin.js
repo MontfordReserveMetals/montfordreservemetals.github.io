@@ -846,11 +846,12 @@ function renderLoggedOut() {
   selectedIntakeNotes.innerHTML = "";
   profileMatchPanel.innerHTML = "";
   adminQuoteList.innerHTML = "";
-  quoteCountLabel.textContent = "No portal cases yet.";
+  quoteCountLabel.textContent = "No portal cases for this client yet.";
   selectedIntakeEmpty.classList.remove("hidden");
   selectedIntakePanel.classList.add("hidden");
   createQuoteButton.disabled = true;
   createQuoteButton.textContent = "Open portal case";
+  createQuoteButton.removeAttribute("title");
 }
 
 function renderAuthenticatedShell(staffRecord, user) {
@@ -999,7 +1000,8 @@ function renderSelectedIntake() {
         <p>This request is already linked to portal case ${escapeHtml(linkedQuote.reference_code)} with status ${escapeHtml(quoteStatusLabels[linkedQuote.status] || formatLabel(linkedQuote.status))}.</p>
       `;
       createQuoteButton.disabled = true;
-      createQuoteButton.textContent = "Portal case already opened";
+      createQuoteButton.textContent = "Portal case already exists";
+      createQuoteButton.title = "This request already has a linked portal case.";
     } else {
       profileMatchPanel.innerHTML = `
         <strong>Portal account found</strong>
@@ -1008,6 +1010,7 @@ function renderSelectedIntake() {
       `;
       createQuoteButton.disabled = false;
       createQuoteButton.textContent = "Open portal case";
+      createQuoteButton.removeAttribute("title");
     }
   } else {
     profileMatchPanel.innerHTML = `
@@ -1016,6 +1019,7 @@ function renderSelectedIntake() {
     `;
     createQuoteButton.disabled = true;
     createQuoteButton.textContent = "Portal sign-in required";
+    createQuoteButton.title = "A portal account must exist before a portal case can be opened.";
   }
 
   quoteItemSummary.value = intake.item_summary || "";
@@ -1030,7 +1034,7 @@ function renderSelectedIntake() {
 
 function renderQuoteList() {
   if (!state.quotes.length) {
-    quoteCountLabel.textContent = "No portal cases yet.";
+    quoteCountLabel.textContent = "No portal cases for this client yet.";
     adminQuoteList.innerHTML = `
       <article class="admin-empty">
         Once you open a portal case for the matched client profile, it will appear here automatically.
@@ -1039,7 +1043,7 @@ function renderQuoteList() {
     return;
   }
 
-  quoteCountLabel.textContent = `${state.quotes.length} portal case${state.quotes.length === 1 ? "" : "s"}`;
+  quoteCountLabel.textContent = `${state.quotes.length} portal case${state.quotes.length === 1 ? "" : "s"} for this client`;
 
   adminQuoteList.innerHTML = state.quotes.map((quote) => {
     const workflow = getWorkflowContext(quote);
