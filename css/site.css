@@ -1598,6 +1598,32 @@ h3 {
   color: var(--text);
 }
 
+.admin-total-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(88, 143, 103, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(121, 219, 146, 0.1), transparent 50%),
+    rgba(244, 250, 245, 0.9);
+}
+
+.admin-total-preview span {
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #557963;
+}
+
+.admin-total-preview strong {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2rem;
+  line-height: 1;
+  color: #3f8f59;
+}
+
 .workflow-label {
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -1700,6 +1726,55 @@ h3 {
   margin: 0;
   color: var(--text-soft);
   line-height: 1.65;
+}
+
+.offer-breakdown {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.offer-breakdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text);
+}
+
+.offer-breakdown-row span {
+  color: var(--text-soft);
+}
+
+.offer-breakdown-row strong {
+  font-size: 1.05rem;
+}
+
+.offer-total-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid rgba(88, 143, 103, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(121, 219, 146, 0.14), transparent 52%),
+    rgba(244, 250, 245, 0.96);
+}
+
+.offer-total-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #557963;
+}
+
+.offer-total-amount {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(2.4rem, 4vw, 3.2rem);
+  line-height: 1;
+  font-weight: 700;
+  color: #79db92;
+  -webkit-text-fill-color: #79db92;
+  text-shadow: 0 10px 28px rgba(121, 219, 146, 0.18);
 }
 
 .quote-card-actions {
