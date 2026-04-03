@@ -943,11 +943,17 @@ h3 {
   align-items: stretch;
 }
 
+.builder-summary-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+}
+
 .builder-summary {
   position: static;
-  align-self: end;
   width: 100%;
-  justify-self: stretch;
+  min-height: 0;
   padding: 1.35rem 1.4rem;
   border: 1px solid rgba(98, 76, 41, 0.14);
   border-radius: 28px;
@@ -2253,6 +2259,10 @@ h3 {
 
   .offer-recovery-amount-block {
     justify-items: start;
+  }
+
+  .builder-summary-column {
+    min-height: 0;
   }
 
   .builder-summary {
