@@ -64,6 +64,10 @@ const quoteStatusLabels = {
   returned: "Returned"
 };
 
+const quoteStatusIndex = Object.fromEntries(
+  quoteStatuses.map((statusValue, index) => [statusValue, index])
+);
+
 const authenticityLabels = {
   pending: "Pending review",
   verified: "Verified",
@@ -180,6 +184,217 @@ function getQuoteById(quoteId) {
   return state.quotes.find((quote) => quote.id === quoteId) ?? null;
 }
 
+function getShipmentForQuote(quote) {
+  return latestByDate(quote?.shipments, ["received_at", "shipped_at", "receipt_uploaded_at", "created_at"]);
+}
+
+function getOfferForQuote(quote) {
+  return latestByDate(quote?.offers, ["sent_at", "accepted_at", "declined_at"]);
+}
+
+function getPayoutForQuote(quote) {
+  return latestByDate(quote?.payouts, ["paid_at", "created_at"]);
+}
+
+function isQuoteAtOrPast(quote, thresholdStatus) {
+  const currentIndex = quoteStatusIndex[quote?.status] ?? -1;
+  const thresholdIndex = quoteStatusIndex[thresholdStatus] ?? -1;
+  return currentIndex >= thresholdIndex;
+}
+
+function buildDefaultStatusDetail(statusValue, options = {}) {
+  const finalOffer = Number(options.finalOffer || 0);
+  const reimbursementAmount = Number(options.reimbursementAmount || 0);
+  const reimbursementCopy = reimbursementAmount > 0
+    ? ` This amount includes ${formatCurrency(reimbursementAmount)} in reimbursed outbound shipping.`
+    : "";
+
+  switch (statusValue) {
+    case "submitted":
+      return "Your request has been received and is awaiting office review.";
+    case "awaiting_shipment":
+      return "Your file is active. Please ship the item and upload tracking plus your outbound shipping receipt.";
+    case "in_transit":
+      return "Tracking has been uploaded and the shipment is now in transit to the office.";
+    case "received":
+      return "Your shipment has been received and is awaiting inspection.";
+    case "inspection_complete":
+      return "Inspection has been completed. The office is preparing the final offer.";
+    case "offer_sent":
+      return `A final offer of ${formatCurrency(finalOffer)} has been issued and is awaiting response.${reimbursementCopy}`;
+    case "accepted":
+      return "You accepted the final offer. Payment will be issued once the office completes settlement.";
+    case "paid":
+      return "Payment has been issued and the settlement is complete.";
+    case "returned":
+      return "The item is being returned. Return shipping and disposition instructions are in process.";
+    default:
+      return null;
+  }
+}
+
+function workflowTimelineMarkup(currentStatus) {
+  const timelineStatuses = quoteStatuses.filter((statusValue) => statusValue !== "returned");
+  const currentIndex = quoteStatusIndex[currentStatus] ?? -1;
+
+  return `
+    <div class="timeline timeline-admin" aria-label="Case workflow">
+      ${timelineStatuses.map((statusValue, index) => {
+        let className = "timeline-step";
+        if (currentStatus === "returned" && statusValue === "offer_sent") {
+          className += " active";
+        } else if (index < currentIndex) {
+          className += " complete";
+        } else if (statusValue === currentStatus) {
+          className += " active";
+        }
+
+        return `<span class="${className}">${escapeHtml(quoteStatusLabels[statusValue] || formatLabel(statusValue))}</span>`;
+      }).join("")}
+      ${currentStatus === "returned" ? `<span class="timeline-step active">${escapeHtml(quoteStatusLabels.returned)}</span>` : ""}
+    </div>
+  `;
+}
+
+function getWorkflowContext(quote) {
+  const shipment = getShipmentForQuote(quote);
+  const offer = getOfferForQuote(quote);
+  const payout = getPayoutForQuote(quote);
+  const hasShipmentEvidence = Boolean(
+    shipment?.tracking_number ||
+    shipment?.receipt_object_path ||
+    shipment?.shipped_at ||
+    shipment?.customer_shipping_cost != null
+  );
+  const inspectionUnlocked = isQuoteAtOrPast(quote, "received");
+  const inspectionComplete = isQuoteAtOrPast(quote, "inspection_complete");
+  const caseClosed = ["accepted", "paid", "returned"].includes(quote.status);
+
+  const receiveLockedReason = hasShipmentEvidence
+    ? "Package has already been marked received."
+    : "Wait for the client to upload tracking, shipping cost, and receipt before marking the package received.";
+
+  let inspectionLockedReason = null;
+  if (!inspectionUnlocked) {
+    inspectionLockedReason = quote.status === "in_transit"
+      ? "Mark the package received before saving inspection results."
+      : "Inspection unlocks after the client ships and the office marks the package received.";
+  }
+
+  let offerLockedReason = null;
+  if (quote.authenticity_verdict === "counterfeit") {
+    offerLockedReason = "This file is marked not authentic. Use return or disposal handling instead of sending a final offer.";
+  } else if (!inspectionComplete) {
+    offerLockedReason = inspectionUnlocked
+      ? "Save the inspection and mark it complete before sending the final offer."
+      : "Final offer remains locked until the package is received and inspection is complete.";
+  } else if (caseClosed) {
+    offerLockedReason = quote.status === "returned"
+      ? "This case has already moved to returned."
+      : "This case is already past the offer stage.";
+  }
+
+  let payoutLockedReason = null;
+  if (!["accepted", "paid"].includes(quote.status) && !offer?.accepted_at) {
+    payoutLockedReason = quote.status === "returned"
+      ? "This case was returned, so no payout is available."
+      : "Payout unlocks only after the client accepts the final offer.";
+  }
+
+  return {
+    shipment,
+    offer,
+    payout,
+    hasShipmentEvidence,
+    canMoveToAwaitingShipment: quote.status === "submitted",
+    canMarkReceived: !isQuoteAtOrPast(quote, "received") && hasShipmentEvidence,
+    receiveLockedReason,
+    inspectionUnlocked,
+    inspectionLockedReason,
+    canCompleteInspection: inspectionUnlocked && !inspectionComplete,
+    offerUnlocked: !offerLockedReason,
+    offerLockedReason,
+    payoutUnlocked: !payoutLockedReason,
+    payoutLockedReason
+  };
+}
+
+function getNextOfficeAction(quote, workflow) {
+  if (quote.status === "submitted") {
+    return {
+      title: "Request shipment",
+      copy: "Move the file into Awaiting shipment once the office is ready for the client to ship."
+    };
+  }
+
+  if (quote.status === "awaiting_shipment") {
+    return {
+      title: "Waiting on client shipment",
+      copy: "The client must upload tracking, shipping cost, and a receipt before the office can receive the package."
+    };
+  }
+
+  if (quote.status === "in_transit") {
+    return {
+      title: workflow.canMarkReceived ? "Mark package received" : "Waiting on delivery",
+      copy: workflow.canMarkReceived
+        ? "Shipment proof is on file. Mark the package received once it arrives to unlock inspection."
+        : "Tracking is not complete yet, so receipt of the package cannot be confirmed."
+    };
+  }
+
+  if (quote.status === "received") {
+    return {
+      title: "Complete inspection",
+      copy: "Save tested karat, tested weight, and authenticity findings, then mark the inspection complete."
+    };
+  }
+
+  if (quote.status === "inspection_complete") {
+    return {
+      title: quote.authenticity_verdict === "counterfeit" ? "Handle return or disposal" : "Prepare final offer",
+      copy: quote.authenticity_verdict === "counterfeit"
+        ? "The item is marked not authentic, so handle return-shipping instructions or the 60-day disposal timeline."
+        : "Issue the final offer after confirming any shipping reimbursement and tested adjustments."
+    };
+  }
+
+  if (quote.status === "offer_sent") {
+    return {
+      title: "Await client response",
+      copy: "The client must accept or decline the final offer in the portal before settlement can continue."
+    };
+  }
+
+  if (quote.status === "accepted") {
+    return {
+      title: "Send payment",
+      copy: "Record the payout details and mark payment sent once settlement has been issued."
+    };
+  }
+
+  if (quote.status === "paid") {
+    return {
+      title: "Case complete",
+      copy: "Settlement has been recorded. Only administrative corrections should happen after this point."
+    };
+  }
+
+  if (quote.status === "returned") {
+    return {
+      title: "Returned workflow",
+      copy: quote.authenticity_verdict === "counterfeit"
+        ? "Monitor return shipping or the 60-day disposal deadline for the item."
+        : "The case has moved to return handling rather than payout."
+    };
+  }
+
+  return {
+    title: "Review case",
+    copy: "Review the current file and continue with the next required event."
+  };
+}
+
 async function openReceiptUrl(path) {
   if (!state.supabase || !path) {
     return;
@@ -274,7 +489,7 @@ function renderLoggedOut() {
   adminEmptyState.classList.remove("hidden");
 
   staffName.textContent = "Private office overview";
-  staffMeta.textContent = "Sign in to review intake requests, create client files, and update portal statuses.";
+  staffMeta.textContent = "Sign in to review intake requests, open portal cases, and manage workflow events.";
 
   intakeMetrics.innerHTML = "";
   intakeList.innerHTML = "";
@@ -282,11 +497,11 @@ function renderLoggedOut() {
   selectedIntakeNotes.innerHTML = "";
   profileMatchPanel.innerHTML = "";
   adminQuoteList.innerHTML = "";
-  quoteCountLabel.textContent = "No client files yet.";
+  quoteCountLabel.textContent = "No portal cases yet.";
   selectedIntakeEmpty.classList.remove("hidden");
   selectedIntakePanel.classList.add("hidden");
   createQuoteButton.disabled = true;
-  createQuoteButton.textContent = "Create client file";
+  createQuoteButton.textContent = "Open portal case";
 }
 
 function renderAuthenticatedShell(staffRecord, user) {
@@ -432,10 +647,10 @@ function renderSelectedIntake() {
       profileMatchPanel.innerHTML = `
         <strong>Portal account found</strong>
         <p>${escapeHtml(state.matchedProfile.full_name || intake.full_name || "Client")} is linked to ${escapeHtml(state.matchedProfile.email || intake.email)}.</p>
-        <p>This request is already linked to portal file ${escapeHtml(linkedQuote.reference_code)} with status ${escapeHtml(quoteStatusLabels[linkedQuote.status] || formatLabel(linkedQuote.status))}.</p>
+        <p>This request is already linked to portal case ${escapeHtml(linkedQuote.reference_code)} with status ${escapeHtml(quoteStatusLabels[linkedQuote.status] || formatLabel(linkedQuote.status))}.</p>
       `;
       createQuoteButton.disabled = true;
-      createQuoteButton.textContent = "Client file already linked";
+      createQuoteButton.textContent = "Portal case already opened";
     } else {
       profileMatchPanel.innerHTML = `
         <strong>Portal account found</strong>
@@ -443,12 +658,12 @@ function renderSelectedIntake() {
         <p>${escapeHtml([state.matchedProfile.city, state.matchedProfile.state].filter(Boolean).join(", ") || "No location on file yet.")}</p>
       `;
       createQuoteButton.disabled = false;
-      createQuoteButton.textContent = "Create client file";
+      createQuoteButton.textContent = "Open portal case";
     }
   } else {
     profileMatchPanel.innerHTML = `
       <strong>No portal account yet</strong>
-      <p>Ask this client to sign into <code>portal.html</code> once using ${escapeHtml(intake.email)}. That first sign-in creates the linked <code>profiles</code> row required for portal-visible quote files.</p>
+      <p>Ask this client to sign into <code>portal.html</code> once using ${escapeHtml(intake.email)}. That first sign-in creates the linked <code>profiles</code> row required for a portal-visible case.</p>
     `;
     createQuoteButton.disabled = true;
     createQuoteButton.textContent = "Portal sign-in required";
@@ -459,35 +674,55 @@ function renderSelectedIntake() {
   quoteWeight.value = Number(intake.claimed_weight_grams || 0).toFixed(2);
   quoteEstimate.value = Number(intake.estimated_quote || 0).toFixed(2);
   quoteStatus.value = "awaiting_shipment";
-  quoteStatusDetail.value = `Your file is active. The office will confirm the next step and shipping instructions shortly.`;
+  quoteStatusDetail.value = buildDefaultStatusDetail("awaiting_shipment") || "";
 
   renderQuoteList();
 }
 
 function renderQuoteList() {
   if (!state.quotes.length) {
-    quoteCountLabel.textContent = "No client files yet.";
+    quoteCountLabel.textContent = "No portal cases yet.";
     adminQuoteList.innerHTML = `
       <article class="admin-empty">
-        Once you create a quote for the matched portal profile, it will appear here automatically.
+        Once you open a portal case for the matched client profile, it will appear here automatically.
       </article>
     `;
     return;
   }
 
-  quoteCountLabel.textContent = `${state.quotes.length} client file${state.quotes.length === 1 ? "" : "s"}`;
+  quoteCountLabel.textContent = `${state.quotes.length} portal case${state.quotes.length === 1 ? "" : "s"}`;
 
   adminQuoteList.innerHTML = state.quotes.map((quote) => {
-    const shipment = latestByDate(quote.shipments, ["received_at", "shipped_at", "receipt_uploaded_at", "created_at"]);
-    const offer = latestByDate(quote.offers, ["sent_at", "accepted_at", "declined_at"]);
-    const payout = latestByDate(quote.payouts, ["paid_at", "created_at"]);
+    const workflow = getWorkflowContext(quote);
+    const shipment = workflow.shipment;
+    const offer = workflow.offer;
+    const payout = workflow.payout;
+    const nextAction = getNextOfficeAction(quote, workflow);
     const reimbursementAmount = offer?.shipping_reimbursement_amount ?? shipment?.customer_shipping_cost ?? 0;
+    const statusDetail = quote.status_detail || buildDefaultStatusDetail(quote.status, {
+      finalOffer: offer?.final_offer,
+      reimbursementAmount
+    }) || "No client-facing status note is set yet.";
+    const inspectionDisabled = workflow.inspectionUnlocked ? "" : " disabled";
+    const offerDisabled = workflow.offerUnlocked ? "" : " disabled";
+    const payoutDisabled = workflow.payoutUnlocked ? "" : " disabled";
+    const offerButtonLabel = offer?.sent_at
+      ? (["accepted", "paid", "returned"].includes(quote.status) ? "Final offer closed" : "Update final offer")
+      : "Save and send final offer";
+    const payoutButtonLabel = quote.status === "paid"
+      ? "Update payout record"
+      : "Save payout";
+    const inspectionCompleteButtonLabel = workflow.canCompleteInspection
+      ? "Save and mark inspection complete"
+      : isQuoteAtOrPast(quote, "inspection_complete")
+        ? "Inspection already complete"
+        : "Inspection complete locked";
 
     return `
       <article class="quote-card quote-admin-card">
         <div class="quote-header">
           <div>
-            <strong>${escapeHtml(quote.item_summary || "Client file")}</strong>
+            <strong>${escapeHtml(quote.item_summary || "Portal case")}</strong>
             <div class="quote-meta">
               <span>${escapeHtml(quote.reference_code)}</span>
               <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
@@ -499,32 +734,37 @@ function renderQuoteList() {
 
         <section class="quote-card-section">
           <div class="admin-section-head">
-            <h3>Portal status</h3>
-            <p>Use the existing status vocabulary</p>
+            <h3>Case workflow</h3>
+            <p>Client-facing stage and next office action</p>
           </div>
-          <form class="admin-quote-form" data-quote-id="${escapeHtml(quote.id)}">
-            <div class="admin-form-grid">
-              <label>
-                Portal status
-                <select name="status">
-                  ${quoteStatusOptionsMarkup(quote.status)}
-                </select>
-              </label>
-
-              <label>
-                Estimate
-                <input name="estimated_quote" type="number" min="0" step="0.01" value="${escapeHtml(Number(quote.estimated_quote || 0).toFixed(2))}">
-              </label>
-
-              <label class="form-span-2">
-                Status detail
-                <textarea name="status_detail" rows="3" placeholder="Explain what the client should expect next.">${escapeHtml(quote.status_detail || "")}</textarea>
-              </label>
+          ${workflowTimelineMarkup(quote.status)}
+          <div class="workflow-summary-grid">
+            <div class="workflow-summary-block">
+              <span class="workflow-label">Current stage</span>
+              <strong>${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</strong>
+              <p class="quote-card-note">${escapeHtml(statusDetail)}</p>
             </div>
-            <div class="admin-actions">
-              <button class="button button-primary" type="submit">Save portal status</button>
+            <div class="workflow-summary-block">
+              <span class="workflow-label">Next office action</span>
+              <strong>${escapeHtml(nextAction.title)}</strong>
+              <p class="quote-card-note">${escapeHtml(nextAction.copy)}</p>
             </div>
-          </form>
+          </div>
+          <div class="admin-actions">
+            ${workflow.canMoveToAwaitingShipment ? `
+              <button class="button button-primary" type="button" data-workflow-action="mark-awaiting-shipment" data-quote-id="${escapeHtml(quote.id)}">
+                Request shipment from client
+              </button>
+            ` : ""}
+            ${workflow.canMarkReceived ? `
+              <button class="button button-primary" type="button" data-workflow-action="mark-received" data-quote-id="${escapeHtml(quote.id)}">
+                Mark package received
+              </button>
+            ` : ""}
+          </div>
+          ${!workflow.canMoveToAwaitingShipment && !workflow.canMarkReceived ? `
+            <p class="quote-card-note">${escapeHtml(nextAction.copy)}</p>
+          ` : ""}
         </section>
 
         <section class="quote-card-section">
@@ -539,6 +779,9 @@ function renderQuoteList() {
             <span>${escapeHtml(shipment?.shipped_at ? `Shipped ${formatDateTime(shipment.shipped_at)}` : "Shipment not yet marked in transit")}</span>
             <span>${escapeHtml(shipment?.received_at ? `Received ${formatDateTime(shipment.received_at)}` : "Package not yet received")}</span>
           </div>
+          ${!workflow.hasShipmentEvidence ? `
+            <p class="admin-step-note">Waiting for the client to upload tracking, shipping cost, and the outbound shipping receipt.</p>
+          ` : ""}
           ${shipment?.receipt_object_path ? `
             <div class="admin-actions">
               <button class="button button-secondary" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
@@ -551,50 +794,54 @@ function renderQuoteList() {
         <section class="quote-card-section">
           <div class="admin-section-head">
             <h3>Inspection</h3>
-            <p>Keep inspection data separate from client-facing status</p>
+            <p>${workflow.inspectionUnlocked ? "Save tested details, then mark inspection complete when ready." : "Locked until the package is marked received."}</p>
           </div>
+          ${workflow.inspectionLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.inspectionLockedReason)}</p>` : ""}
           <form class="admin-inspection-form" data-quote-id="${escapeHtml(quote.id)}">
-            <div class="admin-form-grid">
-              <label>
-                Tested karat
-                <select name="tested_karat">
-                  <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
-                  <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
-                  <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
-                  <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
-                  <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
-                  <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
-                  <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
-                </select>
-              </label>
+            <fieldset class="admin-form-fieldset"${inspectionDisabled}>
+              <div class="admin-form-grid">
+                <label>
+                  Tested karat
+                  <select name="tested_karat">
+                    <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
+                    <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
+                    <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
+                    <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
+                    <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
+                    <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
+                    <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
+                  </select>
+                </label>
 
-              <label>
-                Tested weight in grams
-                <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
-              </label>
+                <label>
+                  Tested weight in grams
+                  <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+                </label>
 
-              <label>
-                Authenticity verdict
-                <select name="authenticity_verdict">
-                  ${["pending", "verified", "adjusted", "counterfeit"].map((value) => {
-                    const selected = (quote.authenticity_verdict || "pending") === value ? " selected" : "";
-                    return `<option value="${value}"${selected}>${escapeHtml(authenticityLabels[value])}</option>`;
-                  }).join("")}
-                </select>
-              </label>
+                <label>
+                  Authenticity verdict
+                  <select name="authenticity_verdict">
+                    ${["pending", "verified", "adjusted", "counterfeit"].map((value) => {
+                      const selected = (quote.authenticity_verdict || "pending") === value ? " selected" : "";
+                      return `<option value="${value}"${selected}>${escapeHtml(authenticityLabels[value])}</option>`;
+                    }).join("")}
+                  </select>
+                </label>
 
-              <label>
-                Counterfeit return deadline
-                <input name="return_deadline_at" type="date" value="${escapeHtml(formatDateInputValue(quote.return_deadline_at))}">
-              </label>
+                <label>
+                  Counterfeit return deadline
+                  <input name="return_deadline_at" type="date" value="${escapeHtml(formatDateInputValue(quote.return_deadline_at))}">
+                </label>
 
-              <label class="form-span-2">
-                Inspection notes
-                <textarea name="inspection_notes" rows="3" placeholder="Document tested purity, weight differences, counterfeit findings, or return instructions.">${escapeHtml(quote.inspection_notes || "")}</textarea>
-              </label>
-            </div>
+                <label class="form-span-2">
+                  Inspection notes
+                  <textarea name="inspection_notes" rows="3" placeholder="Document tested purity, weight differences, counterfeit findings, or return instructions.">${escapeHtml(quote.inspection_notes || "")}</textarea>
+                </label>
+              </div>
+            </fieldset>
             <div class="admin-actions">
-              <button class="button button-primary" type="submit">Save inspection</button>
+              <button class="button button-secondary" type="submit" name="inspection_action" value="save"${inspectionDisabled}>Save inspection draft</button>
+              <button class="button button-primary" type="submit" name="inspection_action" value="complete"${workflow.canCompleteInspection ? "" : " disabled"}>${escapeHtml(inspectionCompleteButtonLabel)}</button>
             </div>
           </form>
         </section>
@@ -602,32 +849,35 @@ function renderQuoteList() {
         <section class="quote-card-section">
           <div class="admin-section-head">
             <h3>Final offer</h3>
-            <p>Offer total can include shipping reimbursement after a passed inspection</p>
+            <p>${workflow.offerUnlocked ? "Offer total can include shipping reimbursement after a passed inspection." : "Locked until inspection is complete."}</p>
           </div>
+          ${workflow.offerLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.offerLockedReason)}</p>` : ""}
           <form class="admin-offer-form" data-quote-id="${escapeHtml(quote.id)}" data-offer-id="${escapeHtml(offer?.id || "")}">
-            <div class="admin-form-grid">
-              <label>
-                Final offer total
-                <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
-              </label>
+            <fieldset class="admin-form-fieldset"${offerDisabled}>
+              <div class="admin-form-grid">
+                <label>
+                  Final offer total
+                  <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+                </label>
 
-              <label>
-                Shipping reimbursement included
-                <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
-              </label>
+                <label>
+                  Shipping reimbursement included
+                  <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
+                </label>
 
-              <label class="form-span-2">
-                Offer notes
-                <textarea name="notes" rows="3" placeholder="Explain adjustments for tested weight, karat, or return-shipping requirements.">${escapeHtml(offer?.notes || "")}</textarea>
-              </label>
-            </div>
+                <label class="form-span-2">
+                  Offer notes
+                  <textarea name="notes" rows="3" placeholder="Explain adjustments for tested weight, karat, or return-shipping requirements.">${escapeHtml(offer?.notes || "")}</textarea>
+                </label>
+              </div>
+            </fieldset>
             <div class="quote-submeta">
               <span>${escapeHtml(offer?.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : "Offer not yet sent")}</span>
               <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Awaiting client response")}</span>
               ${offer?.declined_at ? `<span>${escapeHtml(`Declined ${formatDateTime(offer.declined_at)}`)}</span>` : ""}
             </div>
             <div class="admin-actions">
-              <button class="button button-primary" type="submit">Save and send final offer</button>
+              <button class="button button-primary" type="submit"${offerDisabled}>${escapeHtml(offerButtonLabel)}</button>
             </div>
           </form>
         </section>
@@ -635,40 +885,43 @@ function renderQuoteList() {
         <section class="quote-card-section">
           <div class="admin-section-head">
             <h3>Payout</h3>
-            <p>Mark payment sent after the client accepts</p>
+            <p>${workflow.payoutUnlocked ? "Record settlement details after the client accepts the final offer." : "Locked until the client accepts the final offer."}</p>
           </div>
+          ${workflow.payoutLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.payoutLockedReason)}</p>` : ""}
           <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
-            <div class="admin-form-grid">
-              <label>
-                Payout amount
-                <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
-              </label>
+            <fieldset class="admin-form-fieldset"${payoutDisabled}>
+              <div class="admin-form-grid">
+                <label>
+                  Payout amount
+                  <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+                </label>
 
-              <label>
-                Method
-                <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
-              </label>
+                <label>
+                  Method
+                  <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
+                </label>
 
-              <label>
-                Payout status
-                <select name="status">
-                  ${payoutStatuses.map((value) => {
-                    const selected = (payout?.status || "pending") === value ? " selected" : "";
-                    return `<option value="${value}"${selected}>${escapeHtml(formatLabel(value))}</option>`;
-                  }).join("")}
-                </select>
-              </label>
+                <label>
+                  Payout status
+                  <select name="status">
+                    ${payoutStatuses.map((value) => {
+                      const selected = (payout?.status || "pending") === value ? " selected" : "";
+                      return `<option value="${value}"${selected}>${escapeHtml(formatLabel(value))}</option>`;
+                    }).join("")}
+                  </select>
+                </label>
 
-              <label>
-                Reference id
-                <input name="reference_id" type="text" value="${escapeHtml(payout?.reference_id || "")}">
-              </label>
-            </div>
+                <label>
+                  Reference id
+                  <input name="reference_id" type="text" value="${escapeHtml(payout?.reference_id || "")}">
+                </label>
+              </div>
+            </fieldset>
             <div class="quote-submeta">
               <span>${escapeHtml(payout?.paid_at ? `Paid ${formatDateTime(payout.paid_at)}` : "Payment not yet sent")}</span>
             </div>
             <div class="admin-actions">
-              <button class="button button-primary" type="submit">Save payout</button>
+              <button class="button button-primary" type="submit"${payoutDisabled}>${escapeHtml(payoutButtonLabel)}</button>
             </div>
           </form>
         </section>
@@ -829,11 +1082,70 @@ async function refreshDashboard(preserveSelection = true) {
   await loadSelectedIntakeData(nextSelection);
 }
 
-async function saveInspectionForm(form) {
+async function updateQuoteWorkflowStatus(quoteId, nextStatus, options = {}) {
+  const payload = {
+    status: nextStatus,
+    status_detail: options.statusDetail ?? buildDefaultStatusDetail(nextStatus, options) ?? null
+  };
+
+  const { error } = await state.supabase
+    .from("quotes")
+    .update(payload)
+    .eq("id", quoteId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function markQuoteAwaitingShipment(quote) {
+  if (!quote || quote.status !== "submitted") {
+    showBanner("Only submitted cases can be moved into awaiting shipment.", "warning");
+    return;
+  }
+
+  try {
+    await updateQuoteWorkflowStatus(quote.id, "awaiting_shipment");
+    await loadSelectedIntakeData(state.selectedIntakeId);
+    showBanner("Portal case moved to awaiting shipment.", "success");
+  } catch (error) {
+    showBanner(error instanceof Error ? error.message : "The shipment-request step could not be saved.", "warning");
+  }
+}
+
+async function markQuoteReceived(quote) {
+  if (!quote) {
+    showBanner("The selected portal case could not be loaded.", "warning");
+    return;
+  }
+
+  const workflow = getWorkflowContext(quote);
+  if (!workflow.canMarkReceived) {
+    showBanner(workflow.receiveLockedReason, "warning");
+    return;
+  }
+
+  try {
+    await updateQuoteWorkflowStatus(quote.id, "received");
+    await syncShipmentForQuoteStatus(quote, "received");
+    await loadSelectedIntakeData(state.selectedIntakeId);
+    showBanner("Package marked received and inspection unlocked.", "success");
+  } catch (error) {
+    showBanner(error instanceof Error ? error.message : "The package could not be marked received.", "warning");
+  }
+}
+
+async function saveInspectionForm(form, action = "save") {
   const quoteId = form.getAttribute("data-quote-id");
   const quote = getQuoteById(quoteId);
   if (!quoteId || !quote) {
     showBanner("The inspection record could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const workflow = getWorkflowContext(quote);
+  if (!workflow.inspectionUnlocked) {
+    showBanner(workflow.inspectionLockedReason || "Inspection is not available yet for this case.", "warning");
     return;
   }
 
@@ -853,6 +1165,11 @@ async function saveInspectionForm(form) {
         : null
   };
 
+  if (action === "complete") {
+    payload.status = "inspection_complete";
+    payload.status_detail = buildDefaultStatusDetail("inspection_complete");
+  }
+
   const { error } = await state.supabase
     .from("quotes")
     .update(payload)
@@ -864,14 +1181,26 @@ async function saveInspectionForm(form) {
   }
 
   await loadSelectedIntakeData(state.selectedIntakeId);
-  showBanner("Inspection details saved successfully.", "success");
+  showBanner(
+    action === "complete"
+      ? "Inspection saved and marked complete."
+      : "Inspection details saved successfully.",
+    "success"
+  );
 }
 
 async function saveOfferForm(form) {
   const quoteId = form.getAttribute("data-quote-id");
   const offerId = form.getAttribute("data-offer-id");
-  if (!quoteId) {
+  const quote = getQuoteById(quoteId);
+  if (!quoteId || !quote) {
     showBanner("The final offer could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const workflow = getWorkflowContext(quote);
+  if (!workflow.offerUnlocked) {
+    showBanner(workflow.offerLockedReason || "The final offer is not available yet for this case.", "warning");
     return;
   }
 
@@ -916,20 +1245,13 @@ async function saveOfferForm(form) {
     return;
   }
 
-  const reimbursementCopy = reimbursementAmount > 0
-    ? ` This amount includes ${formatCurrency(reimbursementAmount)} in reimbursed outbound shipping.`
-    : "";
-
-  const { error } = await state.supabase
-    .from("quotes")
-    .update({
-      status: "offer_sent",
-      status_detail: `A final offer of ${formatCurrency(finalOffer)} has been issued and is awaiting response.${reimbursementCopy}`
-    })
-    .eq("id", quoteId);
-
-  if (error) {
-    showBanner(error.message, "warning");
+  try {
+    await updateQuoteWorkflowStatus(quoteId, "offer_sent", {
+      finalOffer,
+      reimbursementAmount
+    });
+  } catch (error) {
+    showBanner(error instanceof Error ? error.message : "The portal case could not be updated after saving the offer.", "warning");
     return;
   }
 
@@ -940,8 +1262,15 @@ async function saveOfferForm(form) {
 async function savePayoutForm(form) {
   const quoteId = form.getAttribute("data-quote-id");
   const payoutId = form.getAttribute("data-payout-id");
-  if (!quoteId) {
+  const quote = getQuoteById(quoteId);
+  if (!quoteId || !quote) {
     showBanner("The payout could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const workflow = getWorkflowContext(quote);
+  if (!workflow.payoutUnlocked) {
+    showBanner(workflow.payoutLockedReason || "Payout is not available yet for this case.", "warning");
     return;
   }
 
@@ -994,16 +1323,10 @@ async function savePayoutForm(form) {
   }
 
   if (status === "paid") {
-    const { error } = await state.supabase
-      .from("quotes")
-      .update({
-        status: "paid",
-        status_detail: "Payment has been issued and the settlement is complete."
-      })
-      .eq("id", quoteId);
-
-    if (error) {
-      showBanner(error.message, "warning");
+    try {
+      await updateQuoteWorkflowStatus(quoteId, "paid");
+    } catch (error) {
+      showBanner(error instanceof Error ? error.message : "The portal case could not be updated after saving payout details.", "warning");
       return;
     }
   }
@@ -1172,7 +1495,11 @@ async function initAdminDashboard() {
     renderFilterButtons();
     renderIntakeList();
     await syncSelectionToCurrentFilter();
-    showBanner("Request status updated successfully.", "success");
+    showBanner("Intake stage updated successfully.", "success");
+  });
+
+  quoteStatus.addEventListener("change", () => {
+    quoteStatusDetail.value = buildDefaultStatusDetail(quoteStatus.value) || "";
   });
 
   quoteCreateForm.addEventListener("submit", async (event) => {
@@ -1180,12 +1507,12 @@ async function initAdminDashboard() {
 
     const intake = getSelectedIntake();
     if (!intake || !state.matchedProfile) {
-      showBanner("A matched portal profile is required before creating a client file.", "warning");
+      showBanner("A matched portal profile is required before opening a portal case.", "warning");
       return;
     }
 
     createQuoteButton.setAttribute("disabled", "disabled");
-    createQuoteButton.textContent = "Creating client file...";
+    createQuoteButton.textContent = "Opening portal case...";
 
     const formData = new FormData(quoteCreateForm);
     const payload = {
@@ -1210,11 +1537,11 @@ async function initAdminDashboard() {
       .maybeSingle();
 
     createQuoteButton.removeAttribute("disabled");
-    createQuoteButton.textContent = "Create client file";
+    createQuoteButton.textContent = "Open portal case";
 
     if (insertResponse.error) {
       if (insertResponse.error.code === "23505") {
-        showBanner("This intake request is already linked to a client file. Refresh the dashboard and update the existing portal status instead.", "warning");
+        showBanner("This intake request is already linked to a portal case. Refresh the dashboard and continue with the existing workflow card instead.", "warning");
         await refreshDashboard(true);
         return;
       }
@@ -1235,10 +1562,26 @@ async function initAdminDashboard() {
     }
 
     await refreshDashboard(true);
-    showBanner("Client file created and linked to the matched portal profile.", "success");
+    showBanner("Portal case opened and linked to the matched client profile.", "success");
   });
 
   adminQuoteList.addEventListener("click", async (event) => {
+    const workflowButton = event.target.closest("[data-workflow-action]");
+    if (workflowButton) {
+      const quote = getQuoteById(workflowButton.getAttribute("data-quote-id"));
+      const action = workflowButton.getAttribute("data-workflow-action");
+
+      if (action === "mark-awaiting-shipment") {
+        await markQuoteAwaitingShipment(quote);
+        return;
+      }
+
+      if (action === "mark-received") {
+        await markQuoteReceived(quote);
+        return;
+      }
+    }
+
     const receiptButton = event.target.closest("[data-receipt-path]");
     if (!receiptButton) {
       return;
@@ -1253,52 +1596,11 @@ async function initAdminDashboard() {
   });
 
   adminQuoteList.addEventListener("submit", async (event) => {
-    const quoteForm = event.target.closest(".admin-quote-form");
-    if (quoteForm) {
-      event.preventDefault();
-
-      const quoteId = quoteForm.getAttribute("data-quote-id");
-      const quote = getQuoteById(quoteId);
-      if (!quoteId || !quote) {
-        showBanner("The client file could not be matched to a quote.", "warning");
-        return;
-      }
-
-      const formData = new FormData(quoteForm);
-      const nextStatus = String(formData.get("status") || "submitted");
-      const payload = {
-        status: nextStatus,
-        estimated_quote: Number(formData.get("estimated_quote") || 0),
-        status_detail: String(formData.get("status_detail") || "").trim() || null
-      };
-
-      const { error } = await state.supabase
-        .from("quotes")
-        .update(payload)
-        .eq("id", quoteId);
-
-      if (error) {
-        showBanner(error.message, "warning");
-        return;
-      }
-
-      try {
-        await syncShipmentForQuoteStatus(quote, nextStatus);
-      } catch (error) {
-        showBanner(error instanceof Error ? error.message : "The shipment status could not be synchronized.", "warning");
-        console.error(error);
-        return;
-      }
-
-      await loadSelectedIntakeData(state.selectedIntakeId);
-      showBanner("Client file updated successfully.", "success");
-      return;
-    }
-
     const inspectionForm = event.target.closest(".admin-inspection-form");
     if (inspectionForm) {
       event.preventDefault();
-      await saveInspectionForm(inspectionForm);
+      const action = event.submitter?.value === "complete" ? "complete" : "save";
+      await saveInspectionForm(inspectionForm, action);
       return;
     }
 

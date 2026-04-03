@@ -1282,6 +1282,7 @@ h3 {
 }
 
 .intake-card {
+  position: relative;
   display: grid;
   gap: 0.7rem;
   width: 100%;
@@ -1292,6 +1293,15 @@ h3 {
   color: var(--text);
   text-align: left;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.intake-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 22px 0 0 22px;
+  background: rgba(167, 123, 51, 0.18);
 }
 
 .intake-card:hover,
@@ -1305,6 +1315,10 @@ h3 {
   border-color: rgba(167, 123, 51, 0.36);
   background: rgba(251, 246, 239, 0.98);
   box-shadow: 0 20px 40px rgba(35, 24, 13, 0.1);
+}
+
+.intake-card.is-selected::before {
+  background: linear-gradient(180deg, rgba(167, 123, 51, 0.82), rgba(95, 128, 104, 0.62));
 }
 
 .intake-card-head,
@@ -1423,8 +1437,7 @@ h3 {
 }
 
 .admin-inline-form,
-.admin-form-grid,
-.admin-quote-form {
+.admin-form-grid {
   display: grid;
   gap: 1rem;
 }
@@ -1439,8 +1452,7 @@ h3 {
 }
 
 .admin-inline-form label,
-.admin-form-grid label,
-.admin-quote-form label {
+.admin-form-grid label {
   display: grid;
   gap: 0.55rem;
   font-size: 0.9rem;
@@ -1452,10 +1464,7 @@ h3 {
 .admin-inline-form textarea,
 .admin-form-grid input,
 .admin-form-grid select,
-.admin-form-grid textarea,
-.admin-quote-form input,
-.admin-quote-form select,
-.admin-quote-form textarea {
+.admin-form-grid textarea {
   width: 100%;
   padding: 0.95rem 1rem;
   border: 1px solid rgba(100, 76, 37, 0.18);
@@ -1470,16 +1479,12 @@ h3 {
 .admin-inline-form textarea:focus,
 .admin-form-grid input:focus,
 .admin-form-grid select:focus,
-.admin-form-grid textarea:focus,
-.admin-quote-form input:focus,
-.admin-quote-form select:focus,
-.admin-quote-form textarea:focus {
+.admin-form-grid textarea:focus {
   outline: 2px solid rgba(167, 123, 51, 0.18);
   border-color: rgba(167, 123, 51, 0.55);
 }
 
-.admin-form-grid textarea,
-.admin-quote-form textarea {
+.admin-form-grid textarea {
   resize: vertical;
   min-height: 110px;
 }
@@ -1491,10 +1496,65 @@ h3 {
 .quote-admin-card {
   display: grid;
   gap: 1rem;
+  border-radius: 22px;
+  border-color: rgba(98, 76, 41, 0.16);
+  box-shadow: 0 18px 40px rgba(35, 24, 13, 0.05);
 }
 
 .quote-admin-card .quote-header {
   margin-bottom: 0;
+}
+
+.timeline-admin {
+  margin: 0;
+}
+
+.workflow-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.workflow-summary-block {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: rgba(255, 252, 247, 0.74);
+}
+
+.workflow-summary-block strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.workflow-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-soft);
+}
+
+.admin-step-note {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(167, 123, 51, 0.24);
+  background: rgba(255, 248, 239, 0.76);
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
+.admin-form-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.admin-form-fieldset:disabled {
+  opacity: 0.58;
 }
 
 .dashboard-head {
@@ -1720,6 +1780,7 @@ h3 {
   }
 
   .admin-form-grid,
+  .workflow-summary-grid,
   .detail-list,
   .portal-action-grid,
   .admin-inline-form {

@@ -6,7 +6,7 @@
   <title>Office Dashboard | Montford Reserve Metals</title>
   <meta
     name="description"
-    content="Internal office dashboard for Montford Reserve Metals staff to review intake requests, create client files, and update portal statuses."
+    content="Internal office dashboard for Montford Reserve Metals staff to review intake requests, open portal cases, and advance client workflow."
   >
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,10 +38,11 @@
     <main class="portal-main">
       <section class="portal-hero reveal">
         <div class="eyebrow">Internal office dashboard</div>
-        <h1>Review intake, open client files, and control portal status from one place.</h1>
+        <h1>Review intake, open portal cases, and advance each file one event at a time.</h1>
         <p class="lead">
           This page is intended for authorized staff only. It uses Supabase Auth and Row Level Security
-          to review intake requests, create quotes for portal users, and update the statuses clients see.
+          to review intake requests, open portal cases for signed-in clients, and move each case through the
+          client-facing workflow in the correct order.
         </p>
       </section>
 
@@ -79,7 +80,7 @@
               <div>
                 <p class="panel-topline">Office dashboard</p>
                 <h2 id="staff-name">Private office overview</h2>
-                <p id="staff-meta">Sign in to review intake requests, create client files, and update portal statuses.</p>
+                <p id="staff-meta">Sign in to review intake requests, open portal cases, and manage workflow events.</p>
               </div>
               <button class="button button-secondary hidden" type="button" id="admin-sign-out-button">Sign out</button>
             </div>
@@ -94,7 +95,7 @@
 
             <div class="admin-dashboard-grid hidden" id="admin-dashboard-grid">
               <section class="dashboard-block admin-sidebar">
-                <div class="dashboard-label">Queue overview</div>
+                <div class="dashboard-label">Intake requests</div>
                 <div class="admin-metrics" id="intake-metrics"></div>
 
                 <div class="admin-filter-bar" id="intake-filter-bar" aria-label="Intake filters">
@@ -111,11 +112,11 @@
               </section>
 
               <section class="dashboard-block dashboard-block-wide admin-detail-panel">
-                <div class="dashboard-label">Selected request</div>
+                <div class="dashboard-label">Selected request and portal case</div>
 
                 <div class="admin-empty" id="selected-intake-empty">
-                  Choose an intake request to review its details, change the internal request status,
-                  and create or update a linked client file.
+                  Choose an intake request to review the submission, update the internal intake pipeline,
+                  and work on the linked portal case.
                 </div>
 
                 <div class="admin-detail-stack hidden" id="selected-intake-panel">
@@ -130,8 +131,8 @@
 
                   <section class="admin-section">
                     <div class="admin-section-head">
-                      <h3>Update request status</h3>
-                      <p>Internal lead pipeline only</p>
+                      <h3>Intake pipeline</h3>
+                      <p>Internal office pipeline only</p>
                     </div>
                     <form id="intake-status-form" class="admin-inline-form">
                       <label>
@@ -144,7 +145,7 @@
                           <option value="closed">Closed</option>
                         </select>
                       </label>
-                      <button class="button button-primary" type="submit">Save request status</button>
+                      <button class="button button-primary" type="submit">Save intake stage</button>
                     </form>
                   </section>
 
@@ -158,8 +159,8 @@
 
                   <section class="admin-section">
                     <div class="admin-section-head">
-                      <h3>Create client file</h3>
-                      <p>This creates the quote record shown in the portal.</p>
+                      <h3>Open portal case</h3>
+                      <p>This creates the quote record the client sees in the portal.</p>
                     </div>
                     <form id="quote-create-form" class="admin-form-grid">
                       <label>
@@ -190,17 +191,10 @@
                       </label>
 
                       <label>
-                        Initial portal status
+                        Opening stage
                         <select id="quote-status" name="status">
                           <option value="submitted">Submitted</option>
                           <option value="awaiting_shipment" selected>Awaiting shipment</option>
-                          <option value="in_transit">In transit</option>
-                          <option value="received">Received</option>
-                          <option value="inspection_complete">Inspection complete</option>
-                          <option value="offer_sent">Offer sent</option>
-                          <option value="accepted">Accepted</option>
-                          <option value="paid">Paid</option>
-                          <option value="returned">Returned</option>
                         </select>
                       </label>
 
@@ -215,15 +209,15 @@
                       </label>
 
                       <button class="button button-primary form-span-2" type="submit" id="create-quote-button">
-                        Create client file
+                        Open portal case
                       </button>
                     </form>
                   </section>
 
                   <section class="admin-section">
                     <div class="admin-section-head">
-                      <h3>Client files</h3>
-                      <p id="quote-count-label">No client files yet.</p>
+                      <h3>Portal cases</h3>
+                      <p id="quote-count-label">No portal cases yet.</p>
                     </div>
                     <div class="quote-list" id="admin-quote-list"></div>
                   </section>
@@ -238,7 +232,7 @@
     <footer class="site-footer">
       <div class="footer-brand">
         <strong data-brand-name>Montford Reserve Metals</strong>
-        <p>Internal office dashboard for reviewing requests, creating client files, and managing portal-visible statuses.</p>
+        <p>Internal office dashboard for reviewing requests, opening portal cases, and managing event-driven workflow updates.</p>
       </div>
       <nav class="footer-links" aria-label="Footer">
         <a href="index.html">Home</a>
