@@ -1333,6 +1333,12 @@ h3 {
   max-width: 900px;
 }
 
+.portal-page .portal-hero,
+.portal-page .portal-hero .lead,
+.portal-page .portal-hero h1 {
+  color: var(--text);
+}
+
 .portal-shell-card {
   margin-top: 2.2rem;
   padding: 1.4rem;
@@ -1340,6 +1346,25 @@ h3 {
   border-radius: 36px;
   background: rgba(250, 244, 235, 0.72);
   box-shadow: var(--shadow);
+}
+
+.portal-page .portal-shell-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(214, 179, 118, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(214, 179, 118, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(16, 23, 21, 0.98), rgba(23, 30, 27, 0.96));
+  box-shadow: 0 30px 70px rgba(10, 12, 11, 0.25);
+}
+
+.portal-page .portal-shell-card::before {
+  content: "";
+  position: absolute;
+  inset: 1rem;
+  border-radius: 28px;
+  border: 1px solid rgba(214, 179, 118, 0.14);
+  pointer-events: none;
 }
 
 .status-banner {
@@ -1364,6 +1389,28 @@ h3 {
   color: #6d4b17;
 }
 
+.portal-page .status-banner {
+  border-color: rgba(214, 179, 118, 0.16);
+  background: rgba(25, 34, 30, 0.82);
+  color: rgba(247, 241, 231, 0.76);
+}
+
+.portal-page .status-banner code {
+  color: #f4e6c8;
+}
+
+.portal-page .status-banner.success {
+  border-color: rgba(93, 142, 107, 0.34);
+  background: rgba(25, 48, 36, 0.9);
+  color: #dfeee4;
+}
+
+.portal-page .status-banner.warning {
+  border-color: rgba(214, 179, 118, 0.26);
+  background: rgba(60, 46, 26, 0.88);
+  color: #f2dfb7;
+}
+
 .auth-panel,
 .dashboard-panel {
   padding: 1.5rem;
@@ -1376,10 +1423,173 @@ h3 {
   min-height: 100%;
 }
 
+.portal-page .auth-panel,
+.portal-page .dashboard-panel,
+.portal-page .dashboard-block,
+.portal-page .empty-state,
+.portal-page .quote-card,
+.portal-page .settlement-summary-card {
+  border-color: rgba(214, 179, 118, 0.12);
+  background: rgba(23, 31, 28, 0.82);
+  box-shadow: none;
+}
+
+.portal-page .dashboard-panel {
+  min-height: 100%;
+}
+
+.portal-page .dashboard-block,
+.portal-page .empty-state {
+  background:
+    linear-gradient(180deg, rgba(27, 36, 33, 0.92), rgba(21, 29, 26, 0.88));
+}
+
+.portal-page .dashboard-head h2,
+.portal-page .empty-state h3,
+.portal-page .portal-card strong,
+.portal-page .quote-header strong,
+.portal-page .settlement-summary-card strong,
+.portal-page .case-accordion-preview strong,
+.portal-page .builder-summary-list-embedded .builder-summary-row strong {
+  color: var(--text-inverse);
+}
+
+.portal-page .dashboard-head p,
+.portal-page .empty-state p,
+.portal-page .quote-card-note,
+.portal-page .profile-grid dt,
+.portal-page .profile-grid dd,
+.portal-page .quote-meta,
+.portal-page .quote-submeta,
+.portal-page .case-accordion-preview,
+.portal-page .builder-summary-list-embedded .builder-summary-row p {
+  color: rgba(247, 241, 231, 0.72);
+}
+
+.portal-page .dashboard-label,
+.portal-page .panel-topline {
+  color: rgba(214, 179, 118, 0.9);
+}
+
+.portal-page .button-secondary {
+  border-color: rgba(214, 179, 118, 0.18);
+  background: rgba(32, 42, 38, 0.8);
+  color: rgba(247, 241, 231, 0.9);
+}
+
+.portal-page .button-secondary:hover,
+.portal-page .button-secondary:focus-visible {
+  border-color: rgba(214, 179, 118, 0.34);
+  background: rgba(41, 53, 48, 0.92);
+}
+
 .auth-form {
   display: grid;
   gap: 1rem;
   margin-top: 1.6rem;
+}
+
+.portal-page .auth-copy,
+.portal-page .auth-note {
+  color: rgba(247, 241, 231, 0.72);
+}
+
+.portal-page .auth-form label,
+.portal-page .portal-action-form label {
+  color: rgba(247, 241, 231, 0.88);
+}
+
+.portal-page .auth-form input,
+.portal-page .portal-action-form input,
+.portal-page .portal-action-form select,
+.portal-page .portal-action-form textarea {
+  border-color: rgba(214, 179, 118, 0.14);
+  background: rgba(17, 25, 22, 0.92);
+  color: rgba(247, 241, 231, 0.92);
+}
+
+.portal-page .auth-form input::placeholder,
+.portal-page .portal-action-form input::placeholder,
+.portal-page .portal-action-form textarea::placeholder {
+  color: rgba(247, 241, 231, 0.42);
+}
+
+.portal-page .auth-form input:focus,
+.portal-page .portal-action-form input:focus,
+.portal-page .portal-action-form select:focus,
+.portal-page .portal-action-form textarea:focus {
+  outline-color: rgba(214, 179, 118, 0.16);
+  border-color: rgba(214, 179, 118, 0.4);
+}
+
+.portal-page .portal-action-form input[type="file"] {
+  background: rgba(27, 36, 33, 0.96);
+}
+
+.portal-page .quote-card {
+  border-color: rgba(214, 179, 118, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(214, 179, 118, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(27, 36, 33, 0.95), rgba(21, 29, 26, 0.92));
+}
+
+.portal-page .quote-card-section {
+  border-top-color: rgba(214, 179, 118, 0.09);
+}
+
+.portal-page .case-accordion-caret {
+  border-color: rgba(214, 179, 118, 0.14);
+  color: rgba(247, 241, 231, 0.7);
+}
+
+.portal-page .timeline-step {
+  border-color: rgba(214, 179, 118, 0.12);
+  color: rgba(247, 241, 231, 0.64);
+  background: rgba(27, 36, 33, 0.72);
+}
+
+.portal-page .timeline-step.complete {
+  background: rgba(80, 107, 88, 0.28);
+  color: #eaf0eb;
+}
+
+.portal-page .timeline-step.active {
+  background: rgba(214, 179, 118, 0.22);
+  color: #f4e6c8;
+}
+
+.portal-page .builder-summary-list-embedded .builder-summary-row {
+  background: rgba(15, 23, 20, 0.38);
+  border-color: rgba(214, 179, 118, 0.1);
+}
+
+.portal-page .offer-breakdown-row {
+  color: rgba(247, 241, 231, 0.9);
+}
+
+.portal-page .offer-breakdown-row span {
+  color: rgba(247, 241, 231, 0.62);
+}
+
+.portal-page .offer-total-card,
+.portal-page .offer-recovery-callout {
+  border-color: rgba(93, 142, 107, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(121, 219, 146, 0.08), transparent 52%),
+    linear-gradient(180deg, rgba(19, 29, 24, 0.98), rgba(24, 35, 29, 0.95));
+}
+
+.portal-page .offer-total-label,
+.portal-page .offer-recovery-amount-label {
+  color: rgba(121, 219, 146, 0.72);
+}
+
+.portal-page .offer-recovery-title {
+  color: #9de4b0;
+}
+
+.portal-page .offer-recovery-copy {
+  color: rgba(247, 241, 231, 0.74);
 }
 
 .admin-layout {
