@@ -105,6 +105,7 @@ const state = {
   selectedIntakeId: null,
   matchedProfile: null,
   quotes: [],
+  expandedQuoteId: null,
   intakeFilter: "active"
 };
 
@@ -395,6 +396,353 @@ function getNextOfficeAction(quote, workflow) {
   };
 }
 
+function renderShipmentEvidenceMarkup(shipment) {
+  if (!shipment) {
+    return `
+      <p class="admin-step-note">
+        Waiting for the client to upload tracking, shipping cost, and the outbound shipping receipt.
+      </p>
+    `;
+  }
+
+  return `
+    <div class="quote-submeta">
+      <span>${escapeHtml(shipment.carrier || "Carrier pending")}</span>
+      <span>${escapeHtml(shipment.tracking_number ? `Tracking ${shipment.tracking_number}` : "Tracking pending")}</span>
+      <span>${escapeHtml(shipment.customer_shipping_cost != null ? `Shipping paid ${formatCurrency(shipment.customer_shipping_cost)}` : "Shipping cost pending")}</span>
+      <span>${escapeHtml(shipment.shipped_at ? `Shipped ${formatDateTime(shipment.shipped_at)}` : "Shipment not yet marked in transit")}</span>
+      <span>${escapeHtml(shipment.received_at ? `Received ${formatDateTime(shipment.received_at)}` : "Package not yet received")}</span>
+    </div>
+    ${shipment.receipt_object_path ? `
+      <div class="admin-actions">
+        <button class="button button-secondary" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
+      </div>
+    ` : `
+      <p class="quote-card-note">No shipping receipt has been uploaded yet.</p>
+    `}
+  `;
+}
+
+function renderCaseRecordMarkup(quote, workflow) {
+  const shipment = workflow.shipment;
+  const offer = workflow.offer;
+  const payout = workflow.payout;
+  const recordItems = [
+    `Estimate ${formatCurrency(quote.estimated_quote)}`,
+    shipment?.tracking_number ? `Tracking ${shipment.tracking_number}` : null,
+    shipment?.customer_shipping_cost != null ? `Outbound shipping ${formatCurrency(shipment.customer_shipping_cost)}` : null,
+    quote.tested_karat ? `Tested ${quote.tested_karat}` : null,
+    quote.tested_weight_grams != null ? `${Number(quote.tested_weight_grams).toFixed(2)}g verified` : null,
+    quote.authenticity_verdict && quote.authenticity_verdict !== "pending"
+      ? authenticityLabels[quote.authenticity_verdict] || formatLabel(quote.authenticity_verdict)
+      : null,
+    offer?.final_offer != null ? `Offer ${formatCurrency(offer.final_offer)}` : null,
+    offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : null,
+    offer?.declined_at ? `Declined ${formatDateTime(offer.declined_at)}` : null,
+    payout?.status ? `Payout ${formatLabel(payout.status)}` : null
+  ].filter(Boolean);
+
+  if (!recordItems.length) {
+    return "";
+  }
+
+  return `
+    <section class="quote-card-section">
+      <div class="admin-section-head">
+        <h3>Case record</h3>
+        <p>Quick reference only</p>
+      </div>
+      <div class="quote-submeta">
+        ${recordItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCurrentStepMarkup(quote, workflow) {
+  const shipment = workflow.shipment;
+  const offer = workflow.offer;
+  const payout = workflow.payout;
+  const reimbursementAmount = offer?.shipping_reimbursement_amount ?? shipment?.customer_shipping_cost ?? 0;
+
+  if (quote.status === "submitted") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Request shipment from the client</p>
+        </div>
+        <p class="quote-card-note">
+          This case has been received into the portal, but outbound shipping has not been requested yet.
+        </p>
+        <div class="admin-actions">
+          <button class="button button-primary" type="button" data-workflow-action="mark-awaiting-shipment" data-quote-id="${escapeHtml(quote.id)}">
+            Request shipment from client
+          </button>
+        </div>
+      </section>
+    `;
+  }
+
+  if (quote.status === "awaiting_shipment") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Waiting on client shipment</p>
+        </div>
+        <p class="admin-step-note">
+          The client must ship the item, upload tracking, upload the shipping receipt, and enter the amount paid.
+        </p>
+      </section>
+    `;
+  }
+
+  if (quote.status === "in_transit") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Review shipment evidence and confirm receipt when it arrives</p>
+        </div>
+        ${renderShipmentEvidenceMarkup(shipment)}
+        <div class="admin-actions">
+          <button class="button button-primary" type="button" data-workflow-action="mark-received" data-quote-id="${escapeHtml(quote.id)}">
+            Mark package received
+          </button>
+        </div>
+      </section>
+    `;
+  }
+
+  if (quote.status === "received") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Inspect the item and save tested results</p>
+        </div>
+        ${renderShipmentEvidenceMarkup(shipment)}
+        <form class="admin-inspection-form" data-quote-id="${escapeHtml(quote.id)}">
+          <fieldset class="admin-form-fieldset">
+            <div class="admin-form-grid">
+              <label>
+                Tested karat
+                <select name="tested_karat">
+                  <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
+                  <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
+                  <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
+                  <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
+                  <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
+                  <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
+                  <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
+                </select>
+              </label>
+
+              <label>
+                Tested weight in grams
+                <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Authenticity verdict
+                <select name="authenticity_verdict">
+                  ${["pending", "verified", "adjusted", "counterfeit"].map((value) => {
+                    const selected = (quote.authenticity_verdict || "pending") === value ? " selected" : "";
+                    return `<option value="${value}"${selected}>${escapeHtml(authenticityLabels[value])}</option>`;
+                  }).join("")}
+                </select>
+              </label>
+
+              <label>
+                Counterfeit return deadline
+                <input name="return_deadline_at" type="date" value="${escapeHtml(formatDateInputValue(quote.return_deadline_at))}">
+              </label>
+
+              <label class="form-span-2">
+                Inspection notes
+                <textarea name="inspection_notes" rows="3" placeholder="Document tested purity, weight differences, counterfeit findings, or return instructions.">${escapeHtml(quote.inspection_notes || "")}</textarea>
+              </label>
+            </div>
+          </fieldset>
+          <div class="admin-actions">
+            <button class="button button-secondary" type="submit" name="inspection_action" value="save">Save inspection draft</button>
+            <button class="button button-primary" type="submit" name="inspection_action" value="complete">Save and mark inspection complete</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  if (quote.status === "inspection_complete") {
+    if (quote.authenticity_verdict === "counterfeit") {
+      return `
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Current step</h3>
+            <p>Return or disposal handling</p>
+          </div>
+          <p class="admin-step-note">
+            This item is marked not authentic. Offer the client paid return shipping. If they do not pay, hold the item for 60 days and then discard it.
+          </p>
+          <div class="quote-submeta">
+            <span>${escapeHtml(`Verdict ${authenticityLabels[quote.authenticity_verdict] || "Not authentic"}`)}</span>
+            <span>${escapeHtml(quote.return_deadline_at ? `Dispose after ${formatDate(quote.return_deadline_at)}` : "Return deadline pending")}</span>
+          </div>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Prepare and send the final offer</p>
+        </div>
+        <div class="quote-submeta">
+          <span>${escapeHtml(quote.tested_karat ? `Tested ${quote.tested_karat}` : "Tested karat pending")}</span>
+          <span>${escapeHtml(quote.tested_weight_grams != null ? `${Number(quote.tested_weight_grams).toFixed(2)}g verified` : "Tested weight pending")}</span>
+          <span>${escapeHtml(authenticityLabels[quote.authenticity_verdict || "pending"] || "Pending review")}</span>
+        </div>
+        <form class="admin-offer-form" data-quote-id="${escapeHtml(quote.id)}" data-offer-id="${escapeHtml(offer?.id || "")}">
+          <fieldset class="admin-form-fieldset">
+            <div class="admin-form-grid">
+              <label>
+                Final offer total
+                <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Shipping reimbursement included
+                <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
+              </label>
+
+              <label class="form-span-2">
+                Offer notes
+                <textarea name="notes" rows="3" placeholder="Explain adjustments for tested weight, karat, or return-shipping requirements.">${escapeHtml(offer?.notes || "")}</textarea>
+              </label>
+            </div>
+          </fieldset>
+          <div class="admin-actions">
+            <button class="button button-primary" type="submit">${escapeHtml(offer?.sent_at ? "Update final offer" : "Save and send final offer")}</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  if (quote.status === "offer_sent") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Waiting on client decision</p>
+        </div>
+        <div class="quote-submeta">
+          <span>${escapeHtml(offer?.final_offer != null ? `Final offer ${formatCurrency(offer.final_offer)}` : "Offer amount pending")}</span>
+          <span>${escapeHtml(reimbursementAmount > 0 ? `Includes shipping reimbursement ${formatCurrency(reimbursementAmount)}` : "No shipping reimbursement added")}</span>
+          <span>${escapeHtml(offer?.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : "Offer not yet sent")}</span>
+        </div>
+        <p class="admin-step-note">
+          The client must accept or decline the final offer in the portal before the office can continue.
+        </p>
+      </section>
+    `;
+  }
+
+  if (quote.status === "accepted") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Send payment and record settlement details</p>
+        </div>
+        <div class="quote-submeta">
+          <span>${escapeHtml(offer?.final_offer != null ? `Accepted offer ${formatCurrency(offer.final_offer)}` : "Accepted offer")}</span>
+          <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Acceptance time pending")}</span>
+        </div>
+        <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
+          <fieldset class="admin-form-fieldset">
+            <div class="admin-form-grid">
+              <label>
+                Payout amount
+                <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Method
+                <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
+              </label>
+
+              <label>
+                Payout status
+                <select name="status">
+                  ${payoutStatuses.map((value) => {
+                    const selected = (payout?.status || "pending") === value ? " selected" : "";
+                    return `<option value="${value}"${selected}>${escapeHtml(formatLabel(value))}</option>`;
+                  }).join("")}
+                </select>
+              </label>
+
+              <label>
+                Reference id
+                <input name="reference_id" type="text" value="${escapeHtml(payout?.reference_id || "")}">
+              </label>
+            </div>
+          </fieldset>
+          <div class="admin-actions">
+            <button class="button button-primary" type="submit">${escapeHtml(quote.status === "paid" ? "Update payout record" : "Save payout")}</button>
+          </div>
+        </form>
+      </section>
+    `;
+  }
+
+  if (quote.status === "paid") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Case complete</p>
+        </div>
+        <div class="quote-submeta">
+          <span>${escapeHtml(payout?.amount != null ? `Paid ${formatCurrency(payout.amount)}` : "Payment recorded")}</span>
+          <span>${escapeHtml(payout?.method ? `Method ${payout.method}` : "Method pending")}</span>
+          <span>${escapeHtml(payout?.paid_at ? `Paid ${formatDateTime(payout.paid_at)}` : "Paid timestamp pending")}</span>
+        </div>
+      </section>
+    `;
+  }
+
+  if (quote.status === "returned") {
+    return `
+      <section class="quote-card-section">
+        <div class="admin-section-head">
+          <h3>Current step</h3>
+          <p>Return workflow</p>
+        </div>
+        <p class="admin-step-note">
+          This case is in return handling. If return shipping is unpaid on a counterfeit item, keep the 60-day disposal deadline on file.
+        </p>
+        <div class="quote-submeta">
+          ${offer?.declined_at ? `<span>${escapeHtml(`Declined ${formatDateTime(offer.declined_at)}`)}</span>` : ""}
+          ${quote.return_deadline_at ? `<span>${escapeHtml(`Dispose after ${formatDate(quote.return_deadline_at)}`)}</span>` : ""}
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="quote-card-section">
+      <div class="admin-section-head">
+        <h3>Current step</h3>
+        <p>Review case</p>
+      </div>
+      <p class="quote-card-note">Review the current file and continue with the next required event.</p>
+    </section>
+  `;
+}
+
 async function openReceiptUrl(path) {
   if (!state.supabase || !path) {
     return;
@@ -481,6 +829,7 @@ function renderLoggedOut() {
   state.selectedIntakeId = null;
   state.matchedProfile = null;
   state.quotes = [];
+  state.expandedQuoteId = null;
 
   staffAuthCard.classList.remove("hidden");
   adminLayout.classList.remove("auth-hidden");
@@ -694,237 +1043,61 @@ function renderQuoteList() {
 
   adminQuoteList.innerHTML = state.quotes.map((quote) => {
     const workflow = getWorkflowContext(quote);
-    const shipment = workflow.shipment;
-    const offer = workflow.offer;
-    const payout = workflow.payout;
     const nextAction = getNextOfficeAction(quote, workflow);
-    const reimbursementAmount = offer?.shipping_reimbursement_amount ?? shipment?.customer_shipping_cost ?? 0;
     const statusDetail = quote.status_detail || buildDefaultStatusDetail(quote.status, {
-      finalOffer: offer?.final_offer,
-      reimbursementAmount
+      finalOffer: workflow.offer?.final_offer,
+      reimbursementAmount: workflow.offer?.shipping_reimbursement_amount ?? workflow.shipment?.customer_shipping_cost ?? 0
     }) || "No client-facing status note is set yet.";
-    const inspectionDisabled = workflow.inspectionUnlocked ? "" : " disabled";
-    const offerDisabled = workflow.offerUnlocked ? "" : " disabled";
-    const payoutDisabled = workflow.payoutUnlocked ? "" : " disabled";
-    const offerButtonLabel = offer?.sent_at
-      ? (["accepted", "paid", "returned"].includes(quote.status) ? "Final offer closed" : "Update final offer")
-      : "Save and send final offer";
-    const payoutButtonLabel = quote.status === "paid"
-      ? "Update payout record"
-      : "Save payout";
-    const inspectionCompleteButtonLabel = workflow.canCompleteInspection
-      ? "Save and mark inspection complete"
-      : isQuoteAtOrPast(quote, "inspection_complete")
-        ? "Inspection already complete"
-        : "Inspection complete locked";
+    const isExpanded = state.expandedQuoteId === quote.id;
 
     return `
-      <article class="quote-card quote-admin-card">
-        <div class="quote-header">
-          <div>
-            <strong>${escapeHtml(quote.item_summary || "Portal case")}</strong>
-            <div class="quote-meta">
-              <span>${escapeHtml(quote.reference_code)}</span>
-              <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
-              <span>${escapeHtml(quote.claimed_karat || "Mixed")} · ${escapeHtml(Number(quote.claimed_weight_grams || 0).toFixed(1))}g</span>
-            </div>
-          </div>
-          <span class="admin-status-pill">${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</span>
-        </div>
-
-        <section class="quote-card-section">
-          <div class="admin-section-head">
-            <h3>Case workflow</h3>
-            <p>Client-facing stage and next office action</p>
-          </div>
-          ${workflowTimelineMarkup(quote.status)}
-          <div class="workflow-summary-grid">
-            <div class="workflow-summary-block">
-              <span class="workflow-label">Current stage</span>
-              <strong>${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</strong>
-              <p class="quote-card-note">${escapeHtml(statusDetail)}</p>
-            </div>
-            <div class="workflow-summary-block">
-              <span class="workflow-label">Next office action</span>
-              <strong>${escapeHtml(nextAction.title)}</strong>
-              <p class="quote-card-note">${escapeHtml(nextAction.copy)}</p>
-            </div>
-          </div>
-          <div class="admin-actions">
-            ${workflow.canMoveToAwaitingShipment ? `
-              <button class="button button-primary" type="button" data-workflow-action="mark-awaiting-shipment" data-quote-id="${escapeHtml(quote.id)}">
-                Request shipment from client
-              </button>
-            ` : ""}
-            ${workflow.canMarkReceived ? `
-              <button class="button button-primary" type="button" data-workflow-action="mark-received" data-quote-id="${escapeHtml(quote.id)}">
-                Mark package received
-              </button>
-            ` : ""}
-          </div>
-          ${!workflow.canMoveToAwaitingShipment && !workflow.canMarkReceived ? `
-            <p class="quote-card-note">${escapeHtml(nextAction.copy)}</p>
-          ` : ""}
-        </section>
-
-        <section class="quote-card-section">
-          <div class="admin-section-head">
-            <h3>Shipment file</h3>
-            <p>Customer-supplied proof and tracking</p>
-          </div>
-          <div class="quote-submeta">
-            <span>${escapeHtml(shipment?.carrier || "Carrier pending")}</span>
-            <span>${escapeHtml(shipment?.tracking_number ? `Tracking ${shipment.tracking_number}` : "Tracking pending")}</span>
-            <span>${escapeHtml(shipment?.customer_shipping_cost != null ? `Shipping paid ${formatCurrency(shipment.customer_shipping_cost)}` : "Shipping cost pending")}</span>
-            <span>${escapeHtml(shipment?.shipped_at ? `Shipped ${formatDateTime(shipment.shipped_at)}` : "Shipment not yet marked in transit")}</span>
-            <span>${escapeHtml(shipment?.received_at ? `Received ${formatDateTime(shipment.received_at)}` : "Package not yet received")}</span>
-          </div>
-          ${!workflow.hasShipmentEvidence ? `
-            <p class="admin-step-note">Waiting for the client to upload tracking, shipping cost, and the outbound shipping receipt.</p>
-          ` : ""}
-          ${shipment?.receipt_object_path ? `
-            <div class="admin-actions">
-              <button class="button button-secondary" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
-            </div>
-          ` : `
-            <p class="quote-card-note">No shipping receipt has been uploaded yet.</p>
-          `}
-        </section>
-
-        <section class="quote-card-section">
-          <div class="admin-section-head">
-            <h3>Inspection</h3>
-            <p>${workflow.inspectionUnlocked ? "Save tested details, then mark inspection complete when ready." : "Locked until the package is marked received."}</p>
-          </div>
-          ${workflow.inspectionLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.inspectionLockedReason)}</p>` : ""}
-          <form class="admin-inspection-form" data-quote-id="${escapeHtml(quote.id)}">
-            <fieldset class="admin-form-fieldset"${inspectionDisabled}>
-              <div class="admin-form-grid">
-                <label>
-                  Tested karat
-                  <select name="tested_karat">
-                    <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
-                    <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
-                    <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
-                    <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
-                    <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
-                    <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
-                    <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
-                  </select>
-                </label>
-
-                <label>
-                  Tested weight in grams
-                  <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
-                </label>
-
-                <label>
-                  Authenticity verdict
-                  <select name="authenticity_verdict">
-                    ${["pending", "verified", "adjusted", "counterfeit"].map((value) => {
-                      const selected = (quote.authenticity_verdict || "pending") === value ? " selected" : "";
-                      return `<option value="${value}"${selected}>${escapeHtml(authenticityLabels[value])}</option>`;
-                    }).join("")}
-                  </select>
-                </label>
-
-                <label>
-                  Counterfeit return deadline
-                  <input name="return_deadline_at" type="date" value="${escapeHtml(formatDateInputValue(quote.return_deadline_at))}">
-                </label>
-
-                <label class="form-span-2">
-                  Inspection notes
-                  <textarea name="inspection_notes" rows="3" placeholder="Document tested purity, weight differences, counterfeit findings, or return instructions.">${escapeHtml(quote.inspection_notes || "")}</textarea>
-                </label>
+      <article class="quote-card quote-admin-card case-accordion${isExpanded ? " is-open" : ""}">
+        <button class="case-accordion-toggle" type="button" data-quote-toggle="${escapeHtml(quote.id)}" aria-expanded="${isExpanded ? "true" : "false"}">
+          <div class="case-accordion-top">
+            <div class="case-accordion-copy">
+              <strong>${escapeHtml(quote.item_summary || "Portal case")}</strong>
+              <div class="quote-meta">
+                <span>${escapeHtml(quote.reference_code)}</span>
+                <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
+                <span>${escapeHtml(quote.claimed_karat || "Mixed")} · ${escapeHtml(Number(quote.claimed_weight_grams || 0).toFixed(1))}g</span>
               </div>
-            </fieldset>
-            <div class="admin-actions">
-              <button class="button button-secondary" type="submit" name="inspection_action" value="save"${inspectionDisabled}>Save inspection draft</button>
-              <button class="button button-primary" type="submit" name="inspection_action" value="complete"${workflow.canCompleteInspection ? "" : " disabled"}>${escapeHtml(inspectionCompleteButtonLabel)}</button>
             </div>
-          </form>
-        </section>
-
-        <section class="quote-card-section">
-          <div class="admin-section-head">
-            <h3>Final offer</h3>
-            <p>${workflow.offerUnlocked ? "Offer total can include shipping reimbursement after a passed inspection." : "Locked until inspection is complete."}</p>
+            <div class="case-accordion-side">
+              <span class="admin-status-pill">${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</span>
+              <span class="case-accordion-caret" aria-hidden="true">&#8964;</span>
+            </div>
           </div>
-          ${workflow.offerLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.offerLockedReason)}</p>` : ""}
-          <form class="admin-offer-form" data-quote-id="${escapeHtml(quote.id)}" data-offer-id="${escapeHtml(offer?.id || "")}">
-            <fieldset class="admin-form-fieldset"${offerDisabled}>
-              <div class="admin-form-grid">
-                <label>
-                  Final offer total
-                  <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
-                </label>
-
-                <label>
-                  Shipping reimbursement included
-                  <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
-                </label>
-
-                <label class="form-span-2">
-                  Offer notes
-                  <textarea name="notes" rows="3" placeholder="Explain adjustments for tested weight, karat, or return-shipping requirements.">${escapeHtml(offer?.notes || "")}</textarea>
-                </label>
-              </div>
-            </fieldset>
-            <div class="quote-submeta">
-              <span>${escapeHtml(offer?.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : "Offer not yet sent")}</span>
-              <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Awaiting client response")}</span>
-              ${offer?.declined_at ? `<span>${escapeHtml(`Declined ${formatDateTime(offer.declined_at)}`)}</span>` : ""}
-            </div>
-            <div class="admin-actions">
-              <button class="button button-primary" type="submit"${offerDisabled}>${escapeHtml(offerButtonLabel)}</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="quote-card-section">
-          <div class="admin-section-head">
-            <h3>Payout</h3>
-            <p>${workflow.payoutUnlocked ? "Record settlement details after the client accepts the final offer." : "Locked until the client accepts the final offer."}</p>
+          <div class="case-accordion-preview">
+            <span><strong>Now:</strong> ${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</span>
+            <span><strong>Next:</strong> ${escapeHtml(nextAction.title)}</span>
           </div>
-          ${workflow.payoutLockedReason ? `<p class="admin-step-note">${escapeHtml(workflow.payoutLockedReason)}</p>` : ""}
-          <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
-            <fieldset class="admin-form-fieldset"${payoutDisabled}>
-              <div class="admin-form-grid">
-                <label>
-                  Payout amount
-                  <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
-                </label>
+        </button>
 
-                <label>
-                  Method
-                  <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
-                </label>
-
-                <label>
-                  Payout status
-                  <select name="status">
-                    ${payoutStatuses.map((value) => {
-                      const selected = (payout?.status || "pending") === value ? " selected" : "";
-                      return `<option value="${value}"${selected}>${escapeHtml(formatLabel(value))}</option>`;
-                    }).join("")}
-                  </select>
-                </label>
-
-                <label>
-                  Reference id
-                  <input name="reference_id" type="text" value="${escapeHtml(payout?.reference_id || "")}">
-                </label>
+        ${isExpanded ? `
+          <div class="case-accordion-body">
+            <section class="quote-card-section">
+              <div class="admin-section-head">
+                <h3>Case workflow</h3>
+                <p>Client-facing stage and next office action</p>
               </div>
-            </fieldset>
-            <div class="quote-submeta">
-              <span>${escapeHtml(payout?.paid_at ? `Paid ${formatDateTime(payout.paid_at)}` : "Payment not yet sent")}</span>
-            </div>
-            <div class="admin-actions">
-              <button class="button button-primary" type="submit"${payoutDisabled}>${escapeHtml(payoutButtonLabel)}</button>
-            </div>
-          </form>
-        </section>
+              ${workflowTimelineMarkup(quote.status)}
+              <div class="workflow-summary-grid">
+                <div class="workflow-summary-block">
+                  <span class="workflow-label">Current stage</span>
+                  <strong>${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</strong>
+                  <p class="quote-card-note">${escapeHtml(statusDetail)}</p>
+                </div>
+                <div class="workflow-summary-block">
+                  <span class="workflow-label">Next office action</span>
+                  <strong>${escapeHtml(nextAction.title)}</strong>
+                  <p class="quote-card-note">${escapeHtml(nextAction.copy)}</p>
+                </div>
+              </div>
+            </section>
+            ${renderCaseRecordMarkup(quote, workflow)}
+            ${renderCurrentStepMarkup(quote, workflow)}
+          </div>
+        ` : ""}
       </article>
     `;
   }).join("");
@@ -1054,6 +1227,10 @@ async function loadSelectedIntakeData(intakeId) {
     }
 
     state.quotes = quotesResponse.data ?? [];
+  }
+
+  if (!state.quotes.some((quote) => quote.id === state.expandedQuoteId)) {
+    state.expandedQuoteId = null;
   }
 
   renderSelectedIntake();
@@ -1561,11 +1738,20 @@ async function initAdminDashboard() {
       }
     }
 
+    state.expandedQuoteId = insertResponse.data?.id ?? null;
     await refreshDashboard(true);
     showBanner("Portal case opened and linked to the matched client profile.", "success");
   });
 
   adminQuoteList.addEventListener("click", async (event) => {
+    const toggleButton = event.target.closest("[data-quote-toggle]");
+    if (toggleButton) {
+      const quoteId = toggleButton.getAttribute("data-quote-toggle");
+      state.expandedQuoteId = state.expandedQuoteId === quoteId ? null : quoteId;
+      renderQuoteList();
+      return;
+    }
+
     const workflowButton = event.target.closest("[data-workflow-action]");
     if (workflowButton) {
       const quote = getQuoteById(workflowButton.getAttribute("data-quote-id"));
