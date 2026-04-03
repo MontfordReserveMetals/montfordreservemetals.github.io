@@ -21,7 +21,8 @@ const signOutButton = document.getElementById("sign-out-button");
 const portalState = {
   supabase: null,
   user: null,
-  quotes: []
+  quotes: [],
+  expandedQuoteId: null
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -511,10 +512,101 @@ function buildPayoutMarkup(payout) {
   `;
 }
 
+function getOfferTotalAmount(offer) {
+  return Number(offer?.final_offer || 0) + Number(offer?.shipping_reimbursement_amount || 0);
+}
+
+function getPortalNextStepText(quote, shipment, offer, payout) {
+  switch (quote.status) {
+    case "submitted":
+      return "Await office review and shipment instructions.";
+    case "awaiting_shipment":
+      return shipment?.tracking_number
+        ? "Shipment details are on file."
+        : "Upload tracking, shipping cost, and your receipt.";
+    case "in_transit":
+      return "Your package is on the way to the office.";
+    case "received":
+      return "The office is inspecting the shipment now.";
+    case "inspection_complete":
+      return quote.authenticity_verdict === "counterfeit"
+        ? "Review the inspection notes and return instructions."
+        : "Inspection is complete. Await the final offer.";
+    case "offer_sent":
+      if (offer?.accepted_at) {
+        return "Offer accepted. Await payout.";
+      }
+
+      if (offer?.declined_at) {
+        return "Upload a return label or accept the payout instead.";
+      }
+
+      return "Review the final offer and choose how to proceed.";
+    case "accepted":
+      return payout?.paid_at
+        ? "Payment has been sent."
+        : "Payment is pending office settlement.";
+    case "paid":
+      return "Settlement has been completed.";
+    case "returned":
+      return quote.return_label_object_path
+        ? "Return label received. The office will arrange shipment back to you."
+        : "Upload a prepaid 4x6 PDF return label within 30 days.";
+    default:
+      return "Portal updates will appear here as the case progresses.";
+  }
+}
+
+function buildPortalAccordionPreview(quote, shipment, offer, payout) {
+  const previewItems = [
+    {
+      label: "Status",
+      value: stepLabels[quote.status] || "Status pending"
+    }
+  ];
+
+  if (offer && ["offer_sent", "accepted", "paid", "returned"].includes(quote.status)) {
+    previewItems.push({
+      label: "Total",
+      value: formatCurrency(getOfferTotalAmount(offer))
+    });
+  } else if (payout?.paid_at) {
+    previewItems.push({
+      label: "Payout",
+      value: formatCurrency(Number(payout.amount || 0))
+    });
+  } else if (shipment?.tracking_number) {
+    previewItems.push({
+      label: "Tracking",
+      value: shipment.tracking_number
+    });
+  } else {
+    previewItems.push({
+      label: "Estimate",
+      value: formatCurrency(Number(quote.estimated_quote || 0))
+    });
+  }
+
+  previewItems.push({
+    label: "Next",
+    value: getPortalNextStepText(quote, shipment, offer, payout)
+  });
+
+  return previewItems
+    .map((item) => `<span><strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.value)}</span>`)
+    .join("");
+}
+
 function renderQuotes(quotes) {
   portalState.quotes = quotes;
+  const availableQuoteIds = new Set(quotes.map((quote) => quote.id));
+
+  if (portalState.expandedQuoteId && !availableQuoteIds.has(portalState.expandedQuoteId)) {
+    portalState.expandedQuoteId = null;
+  }
 
   if (!quotes.length) {
+    portalState.expandedQuoteId = null;
     quoteList.innerHTML = `
       <article class="empty-state">
         <h3>No active submissions</h3>
@@ -534,6 +626,7 @@ function renderQuotes(quotes) {
       `Submitted ${formatDate(quote.submitted_at)}`,
       `Ref ${quote.reference_code}`
     ];
+    const isExpanded = portalState.expandedQuoteId === quote.id;
 
     const subMeta = [
       `Estimate ${formatCurrency(Number(quote.estimated_quote || 0))}`
@@ -552,23 +645,37 @@ function renderQuotes(quotes) {
     }
 
     return `
-      <article class="quote-card quote-card-stack">
-        <div class="quote-header">
-          <div>
-            <strong>${escapeHtml(quote.item_summary || "Precious-metals submission")}</strong>
-            <div class="quote-meta">${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+      <article class="quote-card quote-card-accordion case-accordion${isExpanded ? " is-open" : ""}">
+        <button class="case-accordion-toggle" type="button" data-quote-toggle="${escapeHtml(quote.id)}" aria-expanded="${isExpanded ? "true" : "false"}" aria-controls="portal-case-${escapeHtml(quote.id)}">
+          <div class="case-accordion-top">
+            <div class="case-accordion-copy">
+              <strong>${escapeHtml(quote.item_summary || "Precious-metals submission")}</strong>
+              <div class="quote-meta">${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+            </div>
+            <div class="case-accordion-side">
+              <span class="timeline-step active">${escapeHtml(stepLabels[quote.status] || "Status pending")}</span>
+              <span class="case-accordion-caret" aria-hidden="true">&#8964;</span>
+            </div>
           </div>
-          <span class="timeline-step active">${escapeHtml(stepLabels[quote.status] || "Status pending")}</span>
-        </div>
-        <div class="quote-submeta">${subMeta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-        <p>${escapeHtml(quote.status_detail || "Your case is currently being reviewed.")}</p>
-        ${buildShipmentSummaryMarkup(shipment)}
-        ${buildShipmentFormMarkup(quote, shipment)}
-        ${buildInspectionMarkup(quote)}
-        ${buildOfferMarkup(quote, offer)}
-        ${buildReturnLabelMarkup(quote, offer)}
-        ${buildPayoutMarkup(payout)}
-        <div class="timeline">${renderTimeline(quote.status)}</div>
+          <div class="case-accordion-preview">${buildPortalAccordionPreview(quote, shipment, offer, payout)}</div>
+        </button>
+
+        ${isExpanded ? `
+          <div class="case-accordion-body" id="portal-case-${escapeHtml(quote.id)}">
+            <section class="quote-card-section">
+              <div class="dashboard-label">Case update</div>
+              <div class="quote-submeta">${subMeta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+              <p class="quote-card-note">${escapeHtml(quote.status_detail || "Your case is currently being reviewed.")}</p>
+            </section>
+            ${buildShipmentSummaryMarkup(shipment)}
+            ${buildShipmentFormMarkup(quote, shipment)}
+            ${buildInspectionMarkup(quote)}
+            ${buildOfferMarkup(quote, offer)}
+            ${buildReturnLabelMarkup(quote, offer)}
+            ${buildPayoutMarkup(payout)}
+            <div class="timeline">${renderTimeline(quote.status)}</div>
+          </div>
+        ` : ""}
       </article>
     `;
   }).join("");
@@ -584,6 +691,7 @@ function showDashboard(profile, quotes) {
 function showLoggedOut() {
   portalState.user = null;
   portalState.quotes = [];
+  portalState.expandedQuoteId = null;
 
   profileName.textContent = "Private client overview";
   profileMeta.textContent = "Portal data will appear here after secure sign-in.";
@@ -961,6 +1069,14 @@ async function initLivePortal() {
   });
 
   quoteList.addEventListener("click", async (event) => {
+    const toggleButton = event.target.closest("[data-quote-toggle]");
+    if (toggleButton) {
+      const quoteId = toggleButton.getAttribute("data-quote-toggle");
+      portalState.expandedQuoteId = portalState.expandedQuoteId === quoteId ? null : quoteId;
+      renderQuotes(portalState.quotes);
+      return;
+    }
+
     const storageButton = event.target.closest("[data-storage-path]");
     if (storageButton) {
       try {

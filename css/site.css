@@ -1574,6 +1574,11 @@ h3 {
   border-top: 1px solid rgba(98, 76, 41, 0.1);
 }
 
+.case-accordion-body > .quote-card-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .timeline-admin {
   margin: 0;
 }
@@ -1708,6 +1713,13 @@ h3 {
   border: 1px solid rgba(97, 76, 42, 0.14);
   border-radius: 18px;
   background: rgba(251, 246, 239, 0.9);
+}
+
+.quote-card-accordion {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .quote-card-stack {
