@@ -943,10 +943,10 @@ h3 {
   align-items: start;
 }
 
-.builder-card,
 .builder-summary {
   position: sticky;
-  top: 1.2rem;
+  top: 6.8rem;
+  align-self: start;
 }
 
 .builder-intro {
@@ -1042,6 +1042,16 @@ h3 {
   gap: 1.1rem;
 }
 
+.builder-summary .estimate-amount {
+  font-size: clamp(2.5rem, 4.8vw, 4.1rem);
+  line-height: 0.95;
+  max-width: 10ch;
+}
+
+.builder-summary .estimate-message {
+  max-width: 34ch;
+}
+
 .builder-summary-list {
   display: grid;
   gap: 0.9rem;
@@ -1077,6 +1087,7 @@ h3 {
 .builder-summary-row span {
   color: #79db92;
   font-weight: 700;
+  text-align: right;
 }
 
 .formula-list {
@@ -2229,6 +2240,10 @@ h3 {
 
   .offer-recovery-amount-block {
     justify-items: start;
+  }
+
+  .builder-summary {
+    position: static;
   }
 
   .market-banner-shell {

@@ -67,6 +67,26 @@ function formatCurrency(value) {
   return currencyFormatter.format(Number(value || 0));
 }
 
+function getFunctionErrorMessage(error) {
+  if (!error) {
+    return "";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (typeof error.message === "string") {
+    return error.message;
+  }
+
+  if (typeof error.context === "string") {
+    return error.context;
+  }
+
+  return "";
+}
+
 function isConfigured() {
   const { url, anonKey } = supabaseConfig;
   return Boolean(
@@ -362,6 +382,124 @@ function renderSummaryList(items) {
   }).join("");
 }
 
+function renderInlineItemEstimates(items) {
+  items.forEach((item) => {
+    const row = builderItems.querySelector(`[data-builder-item-id="${item.id}"]`);
+    if (!row) {
+      return;
+    }
+
+    const copyNode = row.querySelector("[data-builder-item-copy]");
+    const amountNode = row.querySelector("[data-builder-item-estimate]");
+    const estimate = state.lineItemsById.get(item.id);
+
+    if (!isCompleteItem(item)) {
+      if (copyNode) {
+        copyNode.textContent = "Complete the row to calculate the line estimate.";
+      }
+      if (amountNode) {
+        amountNode.textContent = "$0";
+      }
+      return;
+    }
+
+    if (!estimate) {
+      if (copyNode) {
+        copyNode.textContent = `${item.purityLabel} · ${Number(item.weightGrams || 0).toFixed(2)}g`;
+      }
+      if (amountNode) {
+        amountNode.textContent = "Pending";
+      }
+      return;
+    }
+
+    if (copyNode) {
+      copyNode.textContent = `${item.purityLabel} · ${Number(item.weightGrams || 0).toFixed(2)}g`;
+    }
+    if (amountNode) {
+      amountNode.textContent = formatCurrency(estimate.estimatedQuote || 0);
+    }
+  });
+}
+
+async function invokeEstimate(body) {
+  return state.supabase.functions.invoke(estimateFunctionName, { body });
+}
+
+async function estimateItemsBatch(completeItems) {
+  const { data, error } = await invokeEstimate({
+    items: completeItems.map((item) => ({
+      label: item.description,
+      metalType: item.metalType,
+      karat: item.karat,
+      purity: item.purity,
+      weightGrams: item.weightGrams
+    }))
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!Array.isArray(data?.lineItems)) {
+    throw new Error("Batch estimate payload was not available.");
+  }
+
+  return {
+    estimatedQuote: Number(data.estimatedQuote || 0),
+    lineItems: data.lineItems
+  };
+}
+
+async function estimateItemsIndividually(completeItems) {
+  const results = await Promise.all(
+    completeItems.map((item) =>
+      invokeEstimate({
+        metalType: item.metalType,
+        karat: item.karat,
+        purity: item.purity,
+        weightGrams: item.weightGrams
+      })
+    )
+  );
+
+  const firstError = results.find((result) => result.error)?.error;
+  if (firstError) {
+    throw firstError;
+  }
+
+  const lineItems = results.map((result, index) => ({
+    label: completeItems[index].description,
+    metalType: result.data?.metalType ?? completeItems[index].metalType,
+    karat: result.data?.karat ?? completeItems[index].karat,
+    purity: result.data?.purity ?? completeItems[index].purity,
+    weightGrams: result.data?.weightGrams ?? completeItems[index].weightGrams,
+    estimatedQuote: Number(result.data?.estimatedQuote ?? 0),
+    marketSpotPerOunce: Number(result.data?.marketSpotPerOunce ?? 0),
+    marketSnapshotAt: result.data?.marketSnapshotAt ?? null,
+    marketSource: result.data?.marketSource ?? null
+  }));
+
+  return {
+    estimatedQuote: Number(lineItems.reduce((sum, item) => sum + Number(item.estimatedQuote || 0), 0).toFixed(2)),
+    lineItems
+  };
+}
+
+function getFriendlyEstimateFailure(error) {
+  const message = getFunctionErrorMessage(error);
+
+  if (/No payout factor is configured for/i.test(message)) {
+    return "Live rates for one or more selected metals are not configured yet. Add the missing Supabase payout-factor secret for that metal and try again.";
+  }
+
+  if (/No cached .* price is available/i.test(message)) {
+    return "Live market prices are not cached yet for one or more selected metals. Refresh the market cache and try again.";
+  }
+
+  return "The live combined estimate is temporarily unavailable. You can still save the draft and submit for manual review.";
+}
+
 function scheduleEstimateRefresh() {
   saveDraft();
 
@@ -372,7 +510,9 @@ function scheduleEstimateRefresh() {
   if (!state.supabase) {
     state.lineItemsById.clear();
     state.totalEstimate = 0;
-    renderSummaryList(collectItems());
+    const items = collectItems();
+    renderSummaryList(items);
+    renderInlineItemEstimates(items);
     setBuilderEstimateDisplay(
       0,
       "The live combined estimate will appear here once the office connection is enabled."
@@ -397,6 +537,7 @@ async function refreshEstimate() {
     state.lineItemsById.clear();
     state.totalEstimate = 0;
     renderSummaryList(items);
+    renderInlineItemEstimates(items);
     setBuilderEstimateDisplay(
       0,
       "Add at least one complete line item to see the combined estimated payout."
@@ -404,44 +545,43 @@ async function refreshEstimate() {
     return null;
   }
 
-  const { data, error } = await state.supabase.functions.invoke(estimateFunctionName, {
-    body: {
-      items: completeItems.map((item) => ({
-        label: item.description,
-        metalType: item.metalType,
-        karat: item.karat,
-        purity: item.purity,
-        weightGrams: item.weightGrams
-      }))
-    }
-  });
-
   if (requestSequence !== state.estimateRequestSequence) {
     return null;
   }
 
-  if (error) {
-    state.lineItemsById.clear();
-    state.totalEstimate = 0;
-    renderSummaryList(items);
-    setBuilderEstimateDisplay(
-      0,
-      "The live combined estimate is temporarily unavailable. You can still save the draft and submit for manual review."
-    );
-    console.error(error);
+  let estimateResult = null;
+
+  try {
+    estimateResult = await estimateItemsBatch(completeItems);
+  } catch (batchError) {
+    try {
+      estimateResult = await estimateItemsIndividually(completeItems);
+    } catch (fallbackError) {
+      state.lineItemsById.clear();
+      state.totalEstimate = 0;
+      renderSummaryList(items);
+      renderInlineItemEstimates(items);
+      setBuilderEstimateDisplay(0, getFriendlyEstimateFailure(fallbackError));
+      console.error(batchError);
+      console.error(fallbackError);
+      return null;
+    }
+  }
+
+  if (requestSequence !== state.estimateRequestSequence || !estimateResult) {
     return null;
   }
 
   state.lineItemsById = new Map(
-    completeItems.map((item, index) => [item.id, data.lineItems?.[index] ?? null])
+    completeItems.map((item, index) => [item.id, estimateResult.lineItems?.[index] ?? null])
   );
-  state.totalEstimate = Number(data.estimatedQuote || 0);
+  state.totalEstimate = Number(estimateResult.estimatedQuote || 0);
   renderSummaryList(items);
+  renderInlineItemEstimates(items);
 
   const summaryMessage = incompleteCount > 0
     ? `Complete the remaining ${incompleteCount} item${incompleteCount === 1 ? "" : "s"} to finalize the combined estimate. Current total for finished items: ${formatCurrency(state.totalEstimate)}.`
-    : data.message ||
-      `Based on current market conditions, the combined estimated amount you would receive is ${formatCurrency(state.totalEstimate)}.`;
+    : `Based on current market conditions, the combined estimated amount you would receive is ${formatCurrency(state.totalEstimate)}. Submit promptly to help lock in this estimate before prices change.`;
 
   setBuilderEstimateDisplay(state.totalEstimate, summaryMessage);
   return {
@@ -468,7 +608,9 @@ function clearBuilderDraft() {
   syncRequestButtonState();
   state.lineItemsById.clear();
   state.totalEstimate = 0;
-  renderSummaryList(collectItems());
+  const items = collectItems();
+  renderSummaryList(items);
+  renderInlineItemEstimates(items);
   setBuilderEstimateDisplay(
     0,
     "Add each item in the list to see the combined estimated amount the client would receive if the submitted details are confirmed on review."
@@ -681,7 +823,9 @@ if (builderForm) {
     syncRequestButtonState();
     state.lineItemsById.clear();
     state.totalEstimate = 0;
-    renderSummaryList(collectItems());
+    const resetItems = collectItems();
+    renderSummaryList(resetItems);
+    renderInlineItemEstimates(resetItems);
     setBuilderEstimateDisplay(
       0,
       "Add each item in the list to see the combined estimated amount the client would receive if the submitted details are confirmed on review."
