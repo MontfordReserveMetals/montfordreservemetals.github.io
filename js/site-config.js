@@ -3,7 +3,7 @@ window.siteConfig = {
     name: "Montford Reserve Metals",
     mark: "MR",
     descriptor: "Buyers of Gold, Silver & Fine Jewelry",
-    email: "privateoffice@example.com",
+    email: "montfordreservemetals@proton.me",
     phoneDisplay: "(561) 555-0188",
     phoneHref: "+15615550188"
   },
@@ -11,11 +11,11 @@ window.siteConfig = {
     name: "James Montford",
     title: "Director of Private Acquisitions",
     images: {
-      formalHeadshot: "docs/James_Muntford/formal_headshot.png",
-      primaryHero: "docs/James_Muntford/primary_hero_portrait.png",
-      officePortrait: "docs/James_Muntford/about_page_office_portrait.png",
-      founderPortrait: "docs/James_Muntford/founder_note_portrait.png",
-      hallwayPortrait: "docs/James_Muntford/full_body_hallway_portrait.png"
+      formalHeadshot: "docs/James_Montford/formal_headshot.png",
+      primaryHero: "docs/James_Montford/primary_hero_portrait.png",
+      officePortrait: "docs/James_Montford/about_page_office_portrait.png",
+      founderPortrait: "docs/James_Montford/founder_note_portrait.png",
+      hallwayPortrait: "docs/James_Montford/full_body_hallway_portrait.png"
     }
   },
   valuation: {

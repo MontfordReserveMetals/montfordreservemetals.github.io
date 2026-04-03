@@ -1454,6 +1454,10 @@ h3 {
   color: var(--text-inverse);
 }
 
+.portal-page .case-accordion-copy strong {
+  color: #f4e6c8;
+}
+
 .portal-page .dashboard-head p,
 .portal-page .empty-state p,
 .portal-page .quote-card-note,
