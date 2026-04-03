@@ -24,9 +24,12 @@ const estimatorForm = document.getElementById("estimator-form");
 const housePriceInput = document.getElementById("house-price");
 const estimateAmount = document.getElementById("estimate-amount");
 const estimateSummary = document.getElementById("estimate-summary");
-const calculateButton = document.getElementById("calculate-button");
 const requestStatus = document.getElementById("request-status");
 const requestButton = document.getElementById("request-button");
+const settlementPreferenceField = document.getElementById("settlement-preference");
+const settlementBankFields = document.getElementById("settlement-bank-fields");
+const bankRoutingNumberInput = document.getElementById("bank-routing-number");
+const bankAccountNumberInput = document.getElementById("bank-account-number");
 
 let supabase = null;
 let latestEstimate = null;
@@ -42,6 +45,44 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 2
 });
+
+function normalizeDigits(value) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function settlementRequiresBanking(method) {
+  return ["Bank wire", "ACH"].includes(String(method || "").trim());
+}
+
+function syncRequestButtonState() {
+  if (!requestButton || !estimatorForm || requestButton.dataset.submitting === "true") {
+    return;
+  }
+
+  requestButton.disabled = !estimatorForm.checkValidity();
+}
+
+function syncSettlementFieldVisibility() {
+  const requiresBanking = settlementRequiresBanking(settlementPreferenceField?.value);
+
+  if (settlementBankFields) {
+    settlementBankFields.classList.toggle("hidden", !requiresBanking);
+  }
+
+  [bankRoutingNumberInput, bankAccountNumberInput].forEach((field) => {
+    if (!field) {
+      return;
+    }
+
+    field.required = requiresBanking;
+
+    if (!requiresBanking) {
+      field.value = "";
+    }
+  });
+
+  syncRequestButtonState();
+}
 
 function getEstimateContext() {
   const karat = document.getElementById("karat")?.value ?? "14K";
@@ -153,7 +194,7 @@ async function refreshEstimate({ showLoading = true } = {}) {
   if (error) {
     setEstimateDisplay(
       0,
-      "The live payout estimate is temporarily unavailable. Please refresh again in a moment or submit your request for manual review.",
+      "The live payout estimate is temporarily unavailable. Please wait a moment or submit your request for manual review.",
       0
     );
     console.error(error);
@@ -199,7 +240,19 @@ function isSupabaseConfigured() {
 }
 
 function resetLeadFields() {
-  ["client-name", "client-email", "client-phone", "client-notes", "website"].forEach((fieldId) => {
+  [
+    "client-name",
+    "client-email",
+    "client-phone",
+    "address-line1",
+    "address-city",
+    "address-state",
+    "address-postal-code",
+    "bank-routing-number",
+    "bank-account-number",
+    "client-notes",
+    "website"
+  ].forEach((fieldId) => {
     const field = document.getElementById(fieldId);
     if (field) {
       field.value = "";
@@ -210,12 +263,9 @@ function resetLeadFields() {
   if (settlementPreference) {
     settlementPreference.value = "Undecided";
   }
-}
 
-if (calculateButton) {
-  calculateButton.addEventListener("click", async () => {
-    await refreshEstimate();
-  });
+  syncSettlementFieldVisibility();
+  syncRequestButtonState();
 }
 
 if (isSupabaseConfigured()) {
@@ -238,8 +288,19 @@ if (estimatorForm) {
     });
   });
 
+  settlementPreferenceField?.addEventListener("change", syncSettlementFieldVisibility);
+  estimatorForm.addEventListener("input", syncRequestButtonState);
+  estimatorForm.addEventListener("change", syncRequestButtonState);
+
   estimatorForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
+    syncSettlementFieldVisibility();
+
+    if (!estimatorForm.reportValidity()) {
+      setRequestStatus("Complete every required field before sending the request.", "warning");
+      return;
+    }
 
     const baseContext = getEstimateContext();
     const contextKey = buildEstimateContextKey(baseContext);
@@ -249,17 +310,37 @@ if (estimatorForm) {
     const fullName = String(document.getElementById("client-name")?.value ?? "").trim();
     const email = String(document.getElementById("client-email")?.value ?? "").trim();
     const phone = String(document.getElementById("client-phone")?.value ?? "").trim();
+    const addressLine1 = String(document.getElementById("address-line1")?.value ?? "").trim();
+    const city = String(document.getElementById("address-city")?.value ?? "").trim();
+    const state = String(document.getElementById("address-state")?.value ?? "").trim();
+    const postalCode = String(document.getElementById("address-postal-code")?.value ?? "").trim();
     const preferredSettlement = String(document.getElementById("settlement-preference")?.value ?? "Undecided");
+    const bankRoutingNumber = normalizeDigits(document.getElementById("bank-routing-number")?.value ?? "");
+    const bankAccountNumber = normalizeDigits(document.getElementById("bank-account-number")?.value ?? "");
     const notes = String(document.getElementById("client-notes")?.value ?? "").trim();
     const honeypot = String(document.getElementById("website")?.value ?? "").trim();
 
-    if (!fullName || !email || !baseContext.itemSummary || baseContext.weight <= 0) {
-      setRequestStatus("Complete the client and item details before sending the request.", "warning");
+    if (!fullName || !email || !phone || !addressLine1 || !city || !state || !postalCode || !baseContext.itemSummary || baseContext.weight <= 0) {
+      setRequestStatus("Complete the client, address, and item details before sending the request.", "warning");
       return;
     }
 
+    if (settlementRequiresBanking(preferredSettlement)) {
+      if (bankRoutingNumber.length !== 9) {
+        setRequestStatus("Enter a valid 9-digit routing number before sending the request.", "warning");
+        bankRoutingNumberInput?.focus();
+        return;
+      }
+
+      if (bankAccountNumber.length < 4) {
+        setRequestStatus("Enter the bank account number before sending the request.", "warning");
+        bankAccountNumberInput?.focus();
+        return;
+      }
+    }
+
     if (!estimateContext) {
-      setRequestStatus("The live payout estimate could not be prepared. Please refresh the estimate and try again.", "warning");
+      setRequestStatus("The live payout estimate could not be prepared. Please wait a moment and try again.", "warning");
       return;
     }
 
@@ -275,12 +356,19 @@ if (estimatorForm) {
     }
 
     requestButton?.setAttribute("disabled", "disabled");
-    requestButton.textContent = "Sending...";
+    if (requestButton) {
+      requestButton.dataset.submitting = "true";
+      requestButton.textContent = "Sending...";
+    }
 
     const payload = {
       full_name: fullName,
       email,
-      phone: phone || null,
+      phone,
+      address_line1: addressLine1,
+      city,
+      state,
+      postal_code: postalCode,
       metal_type: baseContext.metalType,
       item_summary: baseContext.itemSummary,
       claimed_karat: baseContext.karat,
@@ -293,6 +381,8 @@ if (estimatorForm) {
       market_snapshot_at: estimateContext.marketSnapshotAt || null,
       estimated_quote: Number(estimateContext.estimatedQuote.toFixed(2)),
       preferred_settlement: preferredSettlement,
+      bank_routing_number: settlementRequiresBanking(preferredSettlement) ? bankRoutingNumber : null,
+      bank_account_number: settlementRequiresBanking(preferredSettlement) ? bankAccountNumber : null,
       notes: notes || null,
       source: "website",
       source_page: window.location.pathname
@@ -303,7 +393,11 @@ if (estimatorForm) {
       .insert(payload);
 
     requestButton?.removeAttribute("disabled");
-    requestButton.textContent = "Send private request";
+    if (requestButton) {
+      delete requestButton.dataset.submitting;
+      requestButton.textContent = "Send private request";
+    }
+    syncRequestButtonState();
 
     if (error) {
       setRequestStatus(
@@ -323,6 +417,8 @@ if (estimatorForm) {
 }
 
 if (estimatorForm) {
+  syncSettlementFieldVisibility();
+  syncRequestButtonState();
   scheduleEstimateRefresh();
 }
 

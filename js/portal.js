@@ -80,8 +80,10 @@ const demoProfile = {
   full_name: "Sample Client",
   email: "client@example.com",
   phone: "(555) 555-0101",
+  address_line1: "12 East 74th Street",
   city: "Middleburg",
-  state: "Virginia"
+  state: "Virginia",
+  postal_code: "20117"
 };
 
 const demoQuotes = [
@@ -96,6 +98,13 @@ const demoQuotes = [
     status_detail: "Tracking has been uploaded and the shipment is now in transit to the office.",
     submitted_at: "2026-03-22T16:00:00Z",
     authenticity_verdict: "pending",
+    address_line1: "12 East 74th Street",
+    city: "Middleburg",
+    state: "Virginia",
+    postal_code: "20117",
+    preferred_settlement: "Undecided",
+    bank_routing_number: null,
+    bank_account_number: null,
     shipments: [
       {
         id: "demo-shipment-1",
@@ -124,6 +133,13 @@ const demoQuotes = [
     tested_karat: "24K",
     tested_weight_grams: 31.1,
     authenticity_verdict: "verified",
+    address_line1: "12 East 74th Street",
+    city: "Middleburg",
+    state: "Virginia",
+    postal_code: "20117",
+    preferred_settlement: "Check",
+    bank_routing_number: null,
+    bank_account_number: null,
     shipments: [
       {
         id: "demo-shipment-2",
@@ -164,7 +180,7 @@ function describePortalLoadError(error) {
     return "The portal sign-in worked, but the database schema is incomplete. Run the latest supabase/schema.sql in Supabase.";
   }
 
-  if (/claim_portal_intake_requests|submit_client_shipment|respond_to_offer|submit_return_label/i.test(message) || /could not find the function/i.test(message)) {
+  if (/claim_portal_intake_requests|submit_client_shipment|respond_to_offer|submit_return_label|submit_settlement_instructions/i.test(message) || /could not find the function/i.test(message)) {
     return "The portal sign-in worked, but the latest portal workflow functions are missing. Re-run the latest supabase/schema.sql in Supabase.";
   }
 
@@ -210,6 +226,87 @@ function formatCurrency(value) {
   return currencyFormatter.format(Number(value || 0));
 }
 
+function normalizeDigits(value) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function settlementRequiresBanking(method) {
+  return ["Bank wire", "ACH"].includes(String(method || "").trim());
+}
+
+function normalizeSettlementMethod(value) {
+  const method = String(value || "").trim();
+  return ["Bank wire", "ACH", "Check", "Undecided"].includes(method) ? method : "Undecided";
+}
+
+function maskNumericTail(value, visibleCount = 4) {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return "Not yet provided";
+  }
+
+  if (digits.length <= visibleCount) {
+    return digits;
+  }
+
+  return `${"*".repeat(Math.max(digits.length - visibleCount, 0))}${digits.slice(-visibleCount)}`;
+}
+
+function formatMailingAddress(record) {
+  return [
+    record?.address_line1,
+    [record?.city, record?.state].filter(Boolean).join(", "),
+    record?.postal_code
+  ].filter(Boolean).join(" ");
+}
+
+function getSettlementState(record) {
+  const method = normalizeSettlementMethod(record?.preferred_settlement);
+  const bankRoutingNumber = normalizeDigits(record?.bank_routing_number);
+  const bankAccountNumber = normalizeDigits(record?.bank_account_number);
+  const mailingAddress = formatMailingAddress(record);
+  const needsBanking = settlementRequiresBanking(method);
+
+  if (method === "Undecided") {
+    return {
+      method,
+      needsBanking,
+      mailingAddress,
+      bankRoutingNumber,
+      bankAccountNumber,
+      ready: false,
+      statusCopy: "Choose how you want to receive payment before the office sends settlement."
+    };
+  }
+
+  if (method === "Check") {
+    return {
+      method,
+      needsBanking,
+      mailingAddress,
+      bankRoutingNumber: "",
+      bankAccountNumber: "",
+      ready: Boolean(mailingAddress),
+      statusCopy: mailingAddress
+        ? `A mailed check will be sent to ${mailingAddress}.`
+        : "A mailing address is required before a check can be issued."
+    };
+  }
+
+  const hasBanking = bankRoutingNumber.length === 9 && bankAccountNumber.length >= 4;
+  return {
+    method,
+    needsBanking,
+    mailingAddress,
+    bankRoutingNumber,
+    bankAccountNumber,
+    ready: hasBanking,
+    statusCopy: hasBanking
+      ? `${method} details are on file. Routing ${maskNumericTail(bankRoutingNumber)} · Account ${maskNumericTail(bankAccountNumber)}`
+      : `Choose ${method} details and provide routing plus account numbers before the office sends payment.`
+  };
+}
+
 function normalizeNumberInput(value) {
   const raw = String(value ?? "").trim();
   if (!raw) {
@@ -252,6 +349,7 @@ function findQuoteById(quoteId) {
 function renderProfile(profile) {
   profileName.textContent = profile.full_name || "Private client overview";
   profileMeta.textContent = `${profile.email || "No email on file"}${profile.phone ? ` - ${profile.phone}` : ""}`;
+  const mailingAddress = formatMailingAddress(profile);
 
   profileGrid.innerHTML = `
     <div>
@@ -269,6 +367,10 @@ function renderProfile(profile) {
     <div>
       <dt>Location</dt>
       <dd>${escapeHtml([profile.city, profile.state].filter(Boolean).join(", ") || "Not provided")}</dd>
+    </div>
+    <div class="detail-list-wide">
+      <dt>Mailing address</dt>
+      <dd>${escapeHtml(mailingAddress || "Not provided")}</dd>
     </div>
   `;
 }
@@ -430,6 +532,78 @@ function buildOfferMarkup(quote, offer) {
   `;
 }
 
+function buildSettlementMarkup(quote) {
+  if (!["offer_sent", "accepted"].includes(quote.status)) {
+    return "";
+  }
+
+  const settlement = getSettlementState(quote);
+  const requiresBanking = settlement.needsBanking;
+  const mailingAddress = settlement.mailingAddress || "No mailing address is currently on file.";
+  const helperCopy = quote.status === "accepted"
+    ? "Payment cannot be sent until this step is complete."
+    : "You can set the payout method now so the office is ready once the final offer is accepted.";
+
+  return `
+    <section class="quote-card-section">
+      <div class="dashboard-label">Settlement instructions</div>
+      <div class="settlement-summary-card">
+        <strong>${escapeHtml(settlement.method === "Undecided" ? "No payout method selected yet" : settlement.method)}</strong>
+        <p class="quote-card-note">${escapeHtml(settlement.statusCopy)}</p>
+      </div>
+      <form class="portal-action-form portal-settlement-form" data-quote-id="${escapeHtml(quote.id)}">
+        <div class="portal-action-grid">
+          <label class="form-span-2">
+            Settlement method
+            <select name="preferred_settlement" required>
+              <option value=""${settlement.method === "Undecided" ? " selected" : ""} disabled>Select a payout method</option>
+              ${["Bank wire", "ACH", "Check"].map((value) => {
+                const selected = settlement.method === value ? " selected" : "";
+                return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+              }).join("")}
+            </select>
+          </label>
+
+          <div class="settlement-bank-fields form-span-2${requiresBanking ? "" : " hidden"}" data-settlement-bank-fields>
+            <label>
+              Routing number
+              <input
+                name="bank_routing_number"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                value="${escapeHtml(settlement.bankRoutingNumber || "")}"
+                ${requiresBanking ? "required" : ""}
+              >
+            </label>
+
+            <label>
+              Account number
+              <input
+                name="bank_account_number"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                value="${escapeHtml(settlement.bankAccountNumber || "")}"
+                ${requiresBanking ? "required" : ""}
+              >
+            </label>
+          </div>
+        </div>
+        <p class="quote-card-note">
+          ${escapeHtml(helperCopy)}
+          ${requiresBanking
+            ? " Enter routing and account numbers exactly as they should be used for ACH or bank-wire settlement."
+            : ` Checks will be mailed to the address on file: ${mailingAddress}`}
+        </p>
+        <div class="quote-card-actions">
+          <button class="button button-primary" type="submit">${escapeHtml(settlement.ready ? "Update settlement instructions" : "Save settlement instructions")}</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
 function buildReturnLabelMarkup(quote, offer) {
   if (quote.status !== "returned") {
     return "";
@@ -517,6 +691,8 @@ function getOfferTotalAmount(offer) {
 }
 
 function getPortalNextStepText(quote, shipment, offer, payout) {
+  const settlement = getSettlementState(quote);
+
   switch (quote.status) {
     case "submitted":
       return "Await office review and shipment instructions.";
@@ -534,18 +710,26 @@ function getPortalNextStepText(quote, shipment, offer, payout) {
         : "Inspection is complete. Await the final offer.";
     case "offer_sent":
       if (offer?.accepted_at) {
-        return "Offer accepted. Await payout.";
+        return settlement.ready
+          ? "Offer accepted. Await payout."
+          : "Offer accepted. Choose your payout method to avoid delays.";
       }
 
       if (offer?.declined_at) {
         return "Upload a return label or accept the payout instead.";
       }
 
-      return "Review the final offer and choose how to proceed.";
+      return settlement.ready
+        ? "Review the final offer and choose how to proceed."
+        : "Review the final offer and choose how you want payment handled.";
     case "accepted":
-      return payout?.paid_at
-        ? "Payment has been sent."
-        : "Payment is pending office settlement.";
+      if (payout?.paid_at) {
+        return "Payment has been sent.";
+      }
+
+      return settlement.ready
+        ? "Payment is pending office settlement."
+        : "Choose your settlement method before payment can be sent.";
     case "paid":
       return "Settlement has been completed.";
     case "returned":
@@ -671,6 +855,7 @@ function renderQuotes(quotes) {
             ${buildShipmentFormMarkup(quote, shipment)}
             ${buildInspectionMarkup(quote)}
             ${buildOfferMarkup(quote, offer)}
+            ${buildSettlementMarkup(quote)}
             ${buildReturnLabelMarkup(quote, offer)}
             ${buildPayoutMarkup(payout)}
             <div class="timeline">${renderTimeline(quote.status)}</div>
@@ -714,7 +899,7 @@ function renderDemoMode() {
 async function loadDashboard(supabase, user) {
   const profileResponse = await supabase
     .from("profiles")
-    .select("full_name, email, phone, city, state")
+    .select("full_name, email, phone, address_line1, city, state, postal_code")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -731,6 +916,13 @@ async function loadDashboard(supabase, user) {
       claimed_karat,
       claimed_weight_grams,
       estimated_quote,
+      address_line1,
+      city,
+      state,
+      postal_code,
+      preferred_settlement,
+      bank_routing_number,
+      bank_account_number,
       status,
       status_detail,
       submitted_at,
@@ -823,6 +1015,31 @@ async function openStorageObjectUrl(bucketName, path) {
   window.open(data.signedUrl, "_blank", "noopener,noreferrer");
 }
 
+function syncPortalSettlementFormFields(form) {
+  if (!form) {
+    return;
+  }
+
+  const method = String(form.querySelector('select[name="preferred_settlement"]')?.value ?? "").trim();
+  const requiresBanking = settlementRequiresBanking(method);
+  const bankFields = form.querySelector("[data-settlement-bank-fields]");
+
+  bankFields?.classList.toggle("hidden", !requiresBanking);
+
+  ["bank_routing_number", "bank_account_number"].forEach((fieldName) => {
+    const field = form.querySelector(`[name="${fieldName}"]`);
+    if (!field) {
+      return;
+    }
+
+    field.required = requiresBanking;
+
+    if (!requiresBanking) {
+      field.value = "";
+    }
+  });
+}
+
 async function submitShipmentForm(form) {
   if (!portalState.supabase || !portalState.user) {
     showBanner("Sign in before uploading shipment details.", "warning");
@@ -888,6 +1105,78 @@ async function submitShipmentForm(form) {
     submitButton?.removeAttribute("disabled");
     if (submitButton) {
       submitButton.textContent = "Mark shipment in transit";
+    }
+  }
+}
+
+async function submitSettlementForm(form) {
+  if (!portalState.supabase || !portalState.user) {
+    showBanner("Sign in before saving settlement instructions.", "warning");
+    return;
+  }
+
+  const quoteId = form.getAttribute("data-quote-id");
+  if (!quoteId) {
+    showBanner("The settlement method could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const formData = new FormData(form);
+  const method = String(formData.get("preferred_settlement") || "").trim();
+  const bankRoutingNumber = normalizeDigits(formData.get("bank_routing_number"));
+  const bankAccountNumber = normalizeDigits(formData.get("bank_account_number"));
+
+  if (!["Bank wire", "ACH", "Check"].includes(method)) {
+    showBanner("Select ACH, Bank wire, or Check before saving settlement instructions.", "warning");
+    return;
+  }
+
+  if (settlementRequiresBanking(method)) {
+    if (bankRoutingNumber.length !== 9) {
+      showBanner("Enter a valid 9-digit routing number before saving settlement instructions.", "warning");
+      form.querySelector('[name="bank_routing_number"]')?.focus();
+      return;
+    }
+
+    if (bankAccountNumber.length < 4) {
+      showBanner("Enter the bank account number before saving settlement instructions.", "warning");
+      form.querySelector('[name="bank_account_number"]')?.focus();
+      return;
+    }
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton?.setAttribute("disabled", "disabled");
+  if (submitButton) {
+    submitButton.textContent = "Saving settlement instructions...";
+  }
+
+  try {
+    const { error } = await portalState.supabase.rpc("submit_settlement_instructions", {
+      p_quote_id: quoteId,
+      p_method: method,
+      p_bank_routing_number: settlementRequiresBanking(method) ? bankRoutingNumber : null,
+      p_bank_account_number: settlementRequiresBanking(method) ? bankAccountNumber : null
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    await loadDashboard(portalState.supabase, portalState.user);
+    showBanner(
+      method === "Check"
+        ? "Settlement instructions saved. The office will use the mailing address on file for a paper check."
+        : `Settlement instructions saved. ${method} details are now on file.`,
+      "success"
+    );
+  } catch (error) {
+    showBanner(describePortalLoadError(error), "warning");
+    console.error(error);
+  } finally {
+    submitButton?.removeAttribute("disabled");
+    if (submitButton) {
+      submitButton.textContent = "Save settlement instructions";
     }
   }
 }
@@ -1061,11 +1350,27 @@ async function initLivePortal() {
       return;
     }
 
+    const settlementForm = event.target.closest(".portal-settlement-form");
+    if (settlementForm) {
+      event.preventDefault();
+      await submitSettlementForm(settlementForm);
+      return;
+    }
+
     const returnLabelForm = event.target.closest(".portal-return-label-form");
     if (returnLabelForm) {
       event.preventDefault();
       await submitReturnLabelForm(returnLabelForm);
     }
+  });
+
+  quoteList.addEventListener("change", (event) => {
+    const settlementSelect = event.target.closest('.portal-settlement-form select[name="preferred_settlement"]');
+    if (!settlementSelect) {
+      return;
+    }
+
+    syncPortalSettlementFormFields(settlementSelect.closest(".portal-settlement-form"));
   });
 
   quoteList.addEventListener("click", async (event) => {

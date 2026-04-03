@@ -106,14 +106,13 @@ code {
 
 .market-banner-shell {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 1rem;
   padding: 0.82rem 1.2rem;
 }
 
-.market-banner-label,
-.market-banner-meta {
+.market-banner-label {
   color: rgba(247, 241, 231, 0.7);
   font-size: 0.73rem;
   letter-spacing: 0.16em;
@@ -123,10 +122,6 @@ code {
 
 .market-banner-label {
   color: rgba(214, 179, 118, 0.92);
-}
-
-.market-banner-meta {
-  text-align: right;
 }
 
 .market-banner-marquee {
@@ -1740,6 +1735,26 @@ h3 {
   line-height: 1.65;
 }
 
+.settlement-summary-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid rgba(98, 76, 41, 0.12);
+  background: rgba(255, 252, 247, 0.74);
+}
+
+.settlement-summary-card strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.settlement-bank-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .offer-breakdown {
   display: grid;
   gap: 0.75rem;
@@ -2006,6 +2021,7 @@ h3 {
   .workflow-summary-grid,
   .detail-list,
   .portal-action-grid,
+  .settlement-bank-fields,
   .admin-inline-form {
     grid-template-columns: 1fr;
   }
@@ -2042,10 +2058,6 @@ h3 {
   .market-banner-shell {
     grid-template-columns: 1fr;
     gap: 0.7rem;
-  }
-
-  .market-banner-meta {
-    text-align: left;
   }
 
   .footer-meta {

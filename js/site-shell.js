@@ -9,14 +9,6 @@ const marketPriceFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2
 });
 
-const marketTimestampFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  timeZoneName: "short"
-});
-
 let marketBannerPromise = null;
 
 function isSupabaseConfigured() {
@@ -58,7 +50,6 @@ function ensureMarketBanner() {
           </div>
         </div>
       </div>
-      <div class="market-banner-meta" data-market-banner-meta>Cached office market feed</div>
     </div>
   `;
 
@@ -66,14 +57,13 @@ function ensureMarketBanner() {
   return banner;
 }
 
-function setMarketBannerState(items, metaText) {
+function setMarketBannerState(items) {
   const banner = ensureMarketBanner();
   if (!banner) {
     return;
   }
 
   const track = banner.querySelector("[data-market-banner-track]");
-  const meta = banner.querySelector("[data-market-banner-meta]");
 
   if (track) {
     const groupMarkup = items.map((item) => `<span class="market-chip">${item}</span>`).join("");
@@ -81,10 +71,6 @@ function setMarketBannerState(items, metaText) {
       <div class="market-banner-group">${groupMarkup}</div>
       <div class="market-banner-group" aria-hidden="true">${groupMarkup}</div>
     `;
-  }
-
-  if (meta) {
-    meta.textContent = metaText;
   }
 }
 
@@ -98,8 +84,7 @@ async function initMarketBanner() {
 
     if (!isSupabaseConfigured()) {
       setMarketBannerState(
-        ["Gold, silver, platinum, and palladium tape will appear once the live office feed is connected."],
-        "Connect Supabase to display cached market prices."
+        ["Gold, silver, platinum, and palladium tape will appear once the live office feed is connected."]
       );
       return;
     }
@@ -119,8 +104,7 @@ async function initMarketBanner() {
 
       if (!data?.length) {
         setMarketBannerState(
-          ["Market prices will display after the office refresh job runs for the first time."],
-          "No cached market prices yet."
+          ["Market prices will display after the office refresh job runs for the first time."]
         );
         return;
       }
@@ -134,23 +118,11 @@ async function initMarketBanner() {
         return `${metalLabel} ${marketPriceFormatter.format(Number(row.spot_price_per_ounce_usd))}/oz`;
       });
 
-      const fetchedAt = sortedRows
-        .map((row) => row.fetched_at)
-        .filter(Boolean)
-        .sort()
-        .at(-1);
-
-      setMarketBannerState(
-        items,
-        fetchedAt
-          ? `Updated ${marketTimestampFormatter.format(new Date(fetchedAt))}`
-          : "Market update pending"
-      );
+      setMarketBannerState(items);
     } catch (error) {
       console.error(error);
       setMarketBannerState(
-        ["Market tape is temporarily unavailable. Please check back shortly."],
-        "Cached market feed unavailable."
+        ["Market tape is temporarily unavailable. Please check back shortly."]
       );
     }
   })();

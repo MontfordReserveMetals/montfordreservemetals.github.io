@@ -326,17 +326,72 @@
 
               <label>
                 Phone
-                <input id="client-phone" name="client-phone" type="tel" placeholder="(561) 555-0188">
+                <input id="client-phone" name="client-phone" type="tel" placeholder="(561) 555-0188" required>
               </label>
 
               <label>
                 Preferred settlement
-                <select id="settlement-preference" name="settlement-preference">
+                <select id="settlement-preference" name="settlement-preference" required>
                   <option value="Bank wire">Bank wire</option>
                   <option value="ACH">ACH</option>
                   <option value="Check">Check</option>
                   <option value="Undecided" selected>Undecided</option>
                 </select>
+              </label>
+            </div>
+
+            <div class="form-grid">
+              <label class="form-span-2">
+                Mailing address
+                <input
+                  id="address-line1"
+                  name="address-line1"
+                  type="text"
+                  placeholder="12 East 74th Street"
+                  autocomplete="street-address"
+                  required
+                >
+              </label>
+
+              <label>
+                City
+                <input id="address-city" name="address-city" type="text" placeholder="New York" autocomplete="address-level2" required>
+              </label>
+
+              <label>
+                State
+                <input id="address-state" name="address-state" type="text" placeholder="NY" autocomplete="address-level1" required>
+              </label>
+
+              <label>
+                ZIP code
+                <input id="address-postal-code" name="address-postal-code" type="text" placeholder="10021" autocomplete="postal-code" required>
+              </label>
+            </div>
+
+            <div class="form-grid hidden" id="settlement-bank-fields">
+              <label>
+                Routing number
+                <input
+                  id="bank-routing-number"
+                  name="bank-routing-number"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="021000021"
+                >
+              </label>
+
+              <label>
+                Account number
+                <input
+                  id="bank-account-number"
+                  name="bank-account-number"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="000123456789"
+                >
               </label>
             </div>
 
@@ -353,7 +408,6 @@
             <input class="honeypot" id="website" name="website" type="text" tabindex="-1" autocomplete="off">
 
             <div class="form-actions">
-              <button class="button button-secondary" id="calculate-button" type="button">Refresh estimate</button>
               <button class="button button-primary" id="request-button" type="submit">Send private request</button>
             </div>
 

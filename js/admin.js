@@ -165,6 +165,102 @@ function parseOptionalNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeDigits(value) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function settlementRequiresBanking(method) {
+  return ["Bank wire", "ACH"].includes(String(method || "").trim());
+}
+
+function normalizeSettlementMethod(value) {
+  const method = String(value || "").trim();
+  return ["Bank wire", "ACH", "Check", "Undecided"].includes(method) ? method : "Undecided";
+}
+
+function maskNumericTail(value, visibleCount = 4) {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return "Not on file";
+  }
+
+  if (digits.length <= visibleCount) {
+    return digits;
+  }
+
+  return `${"*".repeat(Math.max(digits.length - visibleCount, 0))}${digits.slice(-visibleCount)}`;
+}
+
+function formatMailingAddress(record) {
+  return [
+    record?.address_line1,
+    [record?.city, record?.state].filter(Boolean).join(", "),
+    record?.postal_code
+  ].filter(Boolean).join(" ");
+}
+
+function getSettlementContext(record) {
+  const method = normalizeSettlementMethod(record?.preferred_settlement);
+  const bankRoutingNumber = normalizeDigits(record?.bank_routing_number);
+  const bankAccountNumber = normalizeDigits(record?.bank_account_number);
+  const mailingAddress = formatMailingAddress(record);
+  const needsBanking = settlementRequiresBanking(method);
+
+  if (method === "Undecided") {
+    return {
+      method,
+      mailingAddress,
+      bankRoutingNumber,
+      bankAccountNumber,
+      ready: false,
+      summary: "Settlement undecided",
+      detail: "Client has not chosen a payout method yet.",
+      adminCopy: "Client must choose ACH, bank wire, or check in the portal before payout can be issued.",
+      blockingReason: "The client still needs to choose a payout method in the portal."
+    };
+  }
+
+  if (method === "Check") {
+    const hasMailingAddress = Boolean(mailingAddress);
+    return {
+      method,
+      mailingAddress,
+      bankRoutingNumber: "",
+      bankAccountNumber: "",
+      ready: hasMailingAddress,
+      summary: "Check by mail",
+      detail: hasMailingAddress
+        ? `Mail to ${mailingAddress}`
+        : "Mailing address is missing.",
+      adminCopy: hasMailingAddress
+        ? `Mail check to ${mailingAddress}`
+        : "Mailing address must be captured before a check can be sent.",
+      blockingReason: hasMailingAddress
+        ? null
+        : "A mailing address is required before a check can be issued."
+    };
+  }
+
+  const hasBanking = bankRoutingNumber.length === 9 && bankAccountNumber.length >= 4;
+  return {
+    method,
+    mailingAddress,
+    bankRoutingNumber,
+    bankAccountNumber,
+    ready: hasBanking,
+    summary: hasBanking ? `${method} on file` : `${method} incomplete`,
+    detail: hasBanking
+      ? `Routing ${maskNumericTail(bankRoutingNumber)} · Account ${maskNumericTail(bankAccountNumber)}`
+      : "Routing or account details are missing.",
+    adminCopy: hasBanking
+      ? `Routing ${bankRoutingNumber} · Account ${bankAccountNumber}`
+      : `${method} was selected, but routing and account numbers are not complete yet.`,
+    blockingReason: hasBanking
+      ? null
+      : `The client selected ${method}, but routing and account numbers are not complete yet.`
+  };
+}
+
 function normalizeArray(records) {
   return Array.isArray(records) ? records : [];
 }
@@ -225,7 +321,7 @@ function buildDefaultStatusDetail(statusValue, options = {}) {
     case "offer_sent":
       return `A final offer of ${formatCurrency(finalOffer)} has been issued and is awaiting response.${reimbursementCopy}`;
     case "accepted":
-      return "You accepted the final offer. Payment will be issued once the office completes settlement.";
+      return "You accepted the final offer. Payment will be issued once settlement instructions are complete and the office processes the payout.";
     case "paid":
       return "Payment has been issued and the settlement is complete.";
     case "returned":
@@ -262,6 +358,7 @@ function getWorkflowContext(quote) {
   const shipment = getShipmentForQuote(quote);
   const offer = getOfferForQuote(quote);
   const payout = getPayoutForQuote(quote);
+  const settlement = getSettlementContext(quote);
   const hasShipmentEvidence = Boolean(
     shipment?.tracking_number ||
     shipment?.receipt_object_path ||
@@ -301,12 +398,15 @@ function getWorkflowContext(quote) {
     payoutLockedReason = quote.status === "returned"
       ? "This case was returned, so no payout is available."
       : "Payout unlocks only after the client accepts the final offer.";
+  } else if (quote.status === "accepted" && !settlement.ready) {
+    payoutLockedReason = settlement.blockingReason;
   }
 
   return {
     shipment,
     offer,
     payout,
+    settlement,
     hasShipmentEvidence,
     canMoveToAwaitingShipment: quote.status === "submitted",
     canMarkReceived: !isQuoteAtOrPast(quote, "received") && hasShipmentEvidence,
@@ -370,8 +470,10 @@ function getNextOfficeAction(quote, workflow) {
 
   if (quote.status === "accepted") {
     return {
-      title: "Send payment",
-      copy: "Record the payout details and mark payment sent once settlement has been issued."
+      title: workflow.settlement.ready ? "Send payment" : "Await settlement instructions",
+      copy: workflow.settlement.ready
+        ? "Record the payout details and mark payment sent once settlement has been issued."
+        : workflow.settlement.blockingReason || "The client must complete settlement instructions in the portal before payout can continue."
     };
   }
 
@@ -428,10 +530,13 @@ function renderCaseRecordMarkup(quote, workflow) {
   const shipment = workflow.shipment;
   const offer = workflow.offer;
   const payout = workflow.payout;
+  const settlement = workflow.settlement;
   const recordItems = [
     `Estimate ${formatCurrency(quote.estimated_quote)}`,
     shipment?.tracking_number ? `Tracking ${shipment.tracking_number}` : null,
     shipment?.customer_shipping_cost != null ? `Outbound shipping ${formatCurrency(shipment.customer_shipping_cost)}` : null,
+    settlement?.summary ? settlement.summary : null,
+    settlement?.detail ? settlement.detail : null,
     quote.tested_karat ? `Tested ${quote.tested_karat}` : null,
     quote.tested_weight_grams != null ? `${Number(quote.tested_weight_grams).toFixed(2)}g verified` : null,
     quote.authenticity_verdict && quote.authenticity_verdict !== "pending"
@@ -466,6 +571,7 @@ function renderCurrentStepMarkup(quote, workflow) {
   const shipment = workflow.shipment;
   const offer = workflow.offer;
   const payout = workflow.payout;
+  const settlement = workflow.settlement;
   const reimbursementAmount = offer?.shipping_reimbursement_amount ?? shipment?.customer_shipping_cost ?? 0;
 
   if (quote.status === "submitted") {
@@ -660,6 +766,25 @@ function renderCurrentStepMarkup(quote, workflow) {
   }
 
   if (quote.status === "accepted") {
+    if (!settlement.ready) {
+      return `
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Current step</h3>
+            <p>Waiting on client settlement instructions</p>
+          </div>
+          <div class="quote-submeta">
+            <span>${escapeHtml(settlement.summary)}</span>
+            <span>${escapeHtml(settlement.detail)}</span>
+            <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Acceptance time pending")}</span>
+          </div>
+          <p class="admin-step-note">
+            ${escapeHtml(settlement.blockingReason || "The client must complete settlement instructions in the portal before payment can be issued.")}
+          </p>
+        </section>
+      `;
+    }
+
     return `
       <section class="quote-card-section">
         <div class="admin-section-head">
@@ -670,6 +795,8 @@ function renderCurrentStepMarkup(quote, workflow) {
           <span>${escapeHtml(offer?.final_offer != null ? `Accepted offer ${formatCurrency(offer.final_offer)}` : "Accepted offer")}</span>
           <span>${escapeHtml(reimbursementAmount > 0 ? `Shipping reimbursement ${formatCurrency(reimbursementAmount)}` : "No shipping reimbursement")}</span>
           <span>${escapeHtml(offer?.final_offer != null ? `Total payout ${formatCurrency(Number(offer.final_offer || 0) + reimbursementAmount)}` : "Total payout pending")}</span>
+          <span>${escapeHtml(settlement.summary)}</span>
+          <span>${escapeHtml(settlement.adminCopy)}</span>
           <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Acceptance time pending")}</span>
         </div>
         <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
@@ -682,7 +809,7 @@ function renderCurrentStepMarkup(quote, workflow) {
 
               <label>
                 Method
-                <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
+                <input name="method" type="text" value="${escapeHtml(payout?.method || settlement.method || "")}" placeholder="ACH, bank wire, or check">
               </label>
 
               <label>
@@ -965,6 +1092,8 @@ function renderSelectedIntake() {
   selectedIntakePanel.classList.remove("hidden");
   selectedIntakePill.textContent = formatLabel(intake.status);
   intakeStatusSelect.value = intake.status;
+  const intakeAddress = formatMailingAddress(intake);
+  const intakeSettlement = getSettlementContext(intake);
 
   selectedIntakeDetails.innerHTML = `
     <div>
@@ -980,6 +1109,10 @@ function renderSelectedIntake() {
       <dd>${escapeHtml(intake.phone || "Not provided")}</dd>
     </div>
     <div>
+      <dt>Mailing address</dt>
+      <dd>${escapeHtml(intakeAddress || "Not provided")}</dd>
+    </div>
+    <div>
       <dt>Submitted</dt>
       <dd>${escapeHtml(formatDateTime(intake.created_at))}</dd>
     </div>
@@ -990,6 +1123,10 @@ function renderSelectedIntake() {
     <div>
       <dt>Settlement</dt>
       <dd>${escapeHtml(intake.preferred_settlement || "Not specified")}</dd>
+    </div>
+    <div>
+      <dt>Settlement detail</dt>
+      <dd>${escapeHtml(intakeSettlement.detail)}</dd>
     </div>
     <div>
       <dt>Claimed purity</dt>
@@ -1135,12 +1272,18 @@ async function loadIntakeRequests() {
       full_name,
       email,
       phone,
+      address_line1,
+      city,
+      state,
+      postal_code,
       metal_type,
       item_summary,
       claimed_karat,
       claimed_weight_grams,
       estimated_quote,
       preferred_settlement,
+      bank_routing_number,
+      bank_account_number,
       notes,
       status,
       market_spot_per_ounce,
@@ -1181,7 +1324,7 @@ async function loadSelectedIntakeData(intakeId) {
 
   const profileResponse = await state.supabase
     .from("profiles")
-    .select("id, full_name, email, phone, city, state")
+    .select("id, full_name, email, phone, address_line1, city, state, postal_code")
     .ilike("email", intake.email)
     .maybeSingle();
 
@@ -1202,6 +1345,13 @@ async function loadSelectedIntakeData(intakeId) {
         claimed_karat,
         claimed_weight_grams,
         estimated_quote,
+        address_line1,
+        city,
+        state,
+        postal_code,
+        preferred_settlement,
+        bank_routing_number,
+        bank_account_number,
         status,
         status_detail,
         tested_karat,
@@ -1730,6 +1880,25 @@ async function initAdminDashboard() {
     createQuoteButton.textContent = "Opening portal case...";
 
     const formData = new FormData(quoteCreateForm);
+    const profileUpdateResponse = await state.supabase
+      .from("profiles")
+      .update({
+        full_name: state.matchedProfile.full_name || intake.full_name || null,
+        phone: state.matchedProfile.phone || intake.phone || null,
+        address_line1: state.matchedProfile.address_line1 || intake.address_line1 || null,
+        city: state.matchedProfile.city || intake.city || null,
+        state: state.matchedProfile.state || intake.state || null,
+        postal_code: state.matchedProfile.postal_code || intake.postal_code || null
+      })
+      .eq("id", state.matchedProfile.id);
+
+    if (profileUpdateResponse.error) {
+      createQuoteButton.removeAttribute("disabled");
+      createQuoteButton.textContent = "Open portal case";
+      showBanner(profileUpdateResponse.error.message, "warning");
+      return;
+    }
+
     const payload = {
       user_id: state.matchedProfile.id,
       source_intake_request_id: intake.id,
@@ -1738,6 +1907,13 @@ async function initAdminDashboard() {
       claimed_karat: String(formData.get("claimed_karat") || "mixed"),
       claimed_weight_grams: Number(formData.get("claimed_weight_grams") || 0),
       estimated_quote: Number(formData.get("estimated_quote") || 0),
+      address_line1: intake.address_line1 || null,
+      city: intake.city || null,
+      state: intake.state || null,
+      postal_code: intake.postal_code || null,
+      preferred_settlement: intake.preferred_settlement || "Undecided",
+      bank_routing_number: intake.bank_routing_number || null,
+      bank_account_number: intake.bank_account_number || null,
       market_spot_per_ounce: intake.market_spot_per_ounce ? Number(intake.market_spot_per_ounce) : null,
       market_source: intake.market_source || null,
       market_snapshot_at: intake.market_snapshot_at || null,
