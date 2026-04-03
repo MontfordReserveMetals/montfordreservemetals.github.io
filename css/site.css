@@ -1555,6 +1555,77 @@ h3 {
   background: rgba(251, 246, 239, 0.9);
 }
 
+.quote-card-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.quote-card-section {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(98, 76, 41, 0.12);
+}
+
+.quote-card-note {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
+.quote-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.portal-inline-button {
+  width: auto;
+  min-width: 0;
+}
+
+.portal-action-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.portal-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.portal-action-form label {
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.portal-action-form input,
+.portal-action-form select,
+.portal-action-form textarea {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(100, 76, 37, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 252, 247, 0.92);
+  color: var(--text);
+  font: inherit;
+}
+
+.portal-action-form input:focus,
+.portal-action-form select:focus,
+.portal-action-form textarea:focus {
+  outline: 2px solid rgba(167, 123, 51, 0.18);
+  border-color: rgba(167, 123, 51, 0.55);
+}
+
+.portal-action-form input[type="file"] {
+  padding: 0.75rem 0.85rem;
+  background: rgba(255, 248, 239, 0.96);
+}
+
 .quote-header {
   display: flex;
   align-items: center;
@@ -1650,6 +1721,7 @@ h3 {
 
   .admin-form-grid,
   .detail-list,
+  .portal-action-grid,
   .admin-inline-form {
     grid-template-columns: 1fr;
   }
@@ -1721,7 +1793,8 @@ h3 {
 
   .button,
   .admin-filter-bar .button,
-  .admin-inline-form .button {
+  .admin-inline-form .button,
+  .quote-card-actions .button {
     width: 100%;
   }
 

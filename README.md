@@ -158,6 +158,8 @@ The Supabase anon key is public and is meant to be used in the browser. The Supa
 - The homepage estimator writes public requests into `intake_requests`.
 - That table has an insert-only policy for `anon` and `authenticated` visitors.
 - Customers do not need an account to request an estimate.
+- When that same customer later signs into the portal with the same email address, the portal can automatically claim matching `intake_requests` and create portal-visible `quotes` with status `submitted`.
+- The portal now also lets signed-in customers upload outbound shipment tracking, the amount they paid for shipping, and a receipt image or PDF.
 - When the Edge Functions are deployed, the public estimate should come from the private `estimate-payout` function instead of an exposed browser-side formula.
 - You review `intake_requests` inside the Supabase dashboard and decide which ones move forward.
 
@@ -166,6 +168,9 @@ The Supabase anon key is public and is meant to be used in the browser. The Supa
 - GitHub Pages serves the static HTML, CSS, and JavaScript.
 - Supabase Auth sends magic-link sign-in emails.
 - The first successful sign-in creates a row in `profiles` automatically through the trigger in `supabase/schema.sql`.
+- On sign-in, the portal also runs `claim_portal_intake_requests()` to pull in matching anonymous homepage requests for that same email and show them as `submitted` client files.
+- Signed-in customers can mark a package `in_transit` by uploading tracking, shipping cost, and a receipt image.
+- When a final offer is sent, the customer can accept or decline it from the portal.
 - Row Level Security ensures customers can only read rows that belong to their own user id.
 - Staff can manage intake and quote status from `admin.html`, while deeper table work can still be done in Supabase directly when needed.
 
@@ -177,10 +182,12 @@ The Supabase anon key is public and is meant to be used in the browser. The Supa
 4. Test the homepage form and confirm a row lands in `intake_requests`.
 5. Review leads in Supabase and manually mark the strong ones as `reviewed` or `contacted`.
 6. Have the customer use the portal magic-link flow when you are ready to give them account access.
-7. After that first sign-in creates their `profiles` row, open `admin.html`, match the intake request, and create the customer's first client file.
-8. Update quote statuses from `admin.html`, and use Supabase directly for shipments, offers, and payouts while volume is low.
-9. Add legal pages, mailing instructions, and your real operating copy before launch.
-10. Only after real volume exists, add shipping-label automation, email automation, and payout automation.
+7. On that portal sign-in, matching anonymous homepage requests for the same email can appear automatically as `submitted` client files.
+8. Use `admin.html` to review the intake request, confirm the linked file, record inspection details, send the final offer, and move the portal status forward from there.
+9. Customers can upload shipment proof and accept or decline final offers from `portal.html`.
+10. Use `admin.html` or Supabase directly to mark payout and deeper case-management details while volume is low.
+11. Add legal pages, mailing instructions, and your real operating copy before launch.
+12. Only after real volume exists, add shipping-label automation, email automation, and payout automation.
 
 ## Supporting pages included now
 

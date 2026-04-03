@@ -64,6 +64,15 @@ const quoteStatusLabels = {
   returned: "Returned"
 };
 
+const authenticityLabels = {
+  pending: "Pending review",
+  verified: "Verified",
+  adjusted: "Adjusted after testing",
+  counterfeit: "Not authentic"
+};
+
+const payoutStatuses = ["pending", "processing", "paid", "failed", "returned"];
+
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -137,6 +146,96 @@ function formatLabel(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function formatDateInputValue(value) {
+  return value ? new Date(value).toISOString().slice(0, 10) : "";
+}
+
+function parseOptionalNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeArray(records) {
+  return Array.isArray(records) ? records : [];
+}
+
+function latestByDate(records, keyCandidates) {
+  const keys = Array.isArray(keyCandidates) ? keyCandidates : [keyCandidates];
+
+  return normalizeArray(records)
+    .slice()
+    .sort((left, right) => {
+      const leftValue = keys.map((key) => left?.[key]).find(Boolean) ?? "";
+      const rightValue = keys.map((key) => right?.[key]).find(Boolean) ?? "";
+      return String(rightValue).localeCompare(String(leftValue));
+    })[0] ?? null;
+}
+
+function getQuoteById(quoteId) {
+  return state.quotes.find((quote) => quote.id === quoteId) ?? null;
+}
+
+async function openReceiptUrl(path) {
+  if (!state.supabase || !path) {
+    return;
+  }
+
+  const { data, error } = await state.supabase
+    .storage
+    .from("shipment-receipts")
+    .createSignedUrl(path, 300);
+
+  if (error) {
+    throw error;
+  }
+
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+}
+
+async function syncShipmentForQuoteStatus(quote, nextStatus) {
+  if (!quote || !["awaiting_shipment", "in_transit", "received"].includes(nextStatus)) {
+    return;
+  }
+
+  const shipment = latestByDate(quote.shipments, ["received_at", "shipped_at", "receipt_uploaded_at", "created_at"]);
+  const payload = {
+    status: nextStatus
+  };
+
+  if (nextStatus === "received" && !shipment?.received_at) {
+    payload.received_at = new Date().toISOString();
+  }
+
+  if (shipment?.id) {
+    const { error } = await state.supabase
+      .from("shipments")
+      .update(payload)
+      .eq("id", shipment.id);
+
+    if (error) {
+      throw error;
+    }
+
+    return;
+  }
+
+  const { error } = await state.supabase
+    .from("shipments")
+    .insert({
+      quote_id: quote.id,
+      ...payload
+    });
+
+  if (error) {
+    throw error;
+  }
+}
+
 function quoteStatusOptionsMarkup(selectedValue) {
   return quoteStatuses.map((statusValue) => {
     const selected = statusValue === selectedValue ? " selected" : "";
@@ -187,6 +286,7 @@ function renderLoggedOut() {
   selectedIntakeEmpty.classList.remove("hidden");
   selectedIntakePanel.classList.add("hidden");
   createQuoteButton.disabled = true;
+  createQuoteButton.textContent = "Create client file";
 }
 
 function renderAuthenticatedShell(staffRecord, user) {
@@ -325,19 +425,33 @@ function renderSelectedIntake() {
     <p>${escapeHtml(intake.notes || "No client notes were submitted.")}</p>
   `;
 
+  const linkedQuote = state.quotes.find((quote) => quote.source_intake_request_id === intake.id) ?? null;
+
   if (state.matchedProfile) {
-    profileMatchPanel.innerHTML = `
-      <strong>Portal account found</strong>
-      <p>${escapeHtml(state.matchedProfile.full_name || intake.full_name || "Client")} is linked to ${escapeHtml(state.matchedProfile.email || intake.email)}.</p>
-      <p>${escapeHtml([state.matchedProfile.city, state.matchedProfile.state].filter(Boolean).join(", ") || "No location on file yet.")}</p>
-    `;
-    createQuoteButton.disabled = false;
+    if (linkedQuote) {
+      profileMatchPanel.innerHTML = `
+        <strong>Portal account found</strong>
+        <p>${escapeHtml(state.matchedProfile.full_name || intake.full_name || "Client")} is linked to ${escapeHtml(state.matchedProfile.email || intake.email)}.</p>
+        <p>This request is already linked to portal file ${escapeHtml(linkedQuote.reference_code)} with status ${escapeHtml(quoteStatusLabels[linkedQuote.status] || formatLabel(linkedQuote.status))}.</p>
+      `;
+      createQuoteButton.disabled = true;
+      createQuoteButton.textContent = "Client file already linked";
+    } else {
+      profileMatchPanel.innerHTML = `
+        <strong>Portal account found</strong>
+        <p>${escapeHtml(state.matchedProfile.full_name || intake.full_name || "Client")} is linked to ${escapeHtml(state.matchedProfile.email || intake.email)}.</p>
+        <p>${escapeHtml([state.matchedProfile.city, state.matchedProfile.state].filter(Boolean).join(", ") || "No location on file yet.")}</p>
+      `;
+      createQuoteButton.disabled = false;
+      createQuoteButton.textContent = "Create client file";
+    }
   } else {
     profileMatchPanel.innerHTML = `
       <strong>No portal account yet</strong>
       <p>Ask this client to sign into <code>portal.html</code> once using ${escapeHtml(intake.email)}. That first sign-in creates the linked <code>profiles</code> row required for portal-visible quote files.</p>
     `;
     createQuoteButton.disabled = true;
+    createQuoteButton.textContent = "Portal sign-in required";
   }
 
   quoteItemSummary.value = intake.item_summary || "";
@@ -363,45 +477,204 @@ function renderQuoteList() {
 
   quoteCountLabel.textContent = `${state.quotes.length} client file${state.quotes.length === 1 ? "" : "s"}`;
 
-  adminQuoteList.innerHTML = state.quotes.map((quote) => `
-    <article class="quote-card quote-admin-card">
-      <div class="quote-header">
-        <div>
-          <strong>${escapeHtml(quote.item_summary || "Client file")}</strong>
-          <div class="quote-meta">
-            <span>${escapeHtml(quote.reference_code)}</span>
-            <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
-            <span>${escapeHtml(quote.claimed_karat || "Mixed")} · ${escapeHtml(Number(quote.claimed_weight_grams || 0).toFixed(1))}g</span>
+  adminQuoteList.innerHTML = state.quotes.map((quote) => {
+    const shipment = latestByDate(quote.shipments, ["received_at", "shipped_at", "receipt_uploaded_at", "created_at"]);
+    const offer = latestByDate(quote.offers, ["sent_at", "accepted_at", "declined_at"]);
+    const payout = latestByDate(quote.payouts, ["paid_at", "created_at"]);
+    const reimbursementAmount = offer?.shipping_reimbursement_amount ?? shipment?.customer_shipping_cost ?? 0;
+
+    return `
+      <article class="quote-card quote-admin-card">
+        <div class="quote-header">
+          <div>
+            <strong>${escapeHtml(quote.item_summary || "Client file")}</strong>
+            <div class="quote-meta">
+              <span>${escapeHtml(quote.reference_code)}</span>
+              <span>${escapeHtml(formatDate(quote.submitted_at))}</span>
+              <span>${escapeHtml(quote.claimed_karat || "Mixed")} · ${escapeHtml(Number(quote.claimed_weight_grams || 0).toFixed(1))}g</span>
+            </div>
           </div>
+          <span class="admin-status-pill">${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</span>
         </div>
-        <span class="admin-status-pill">${escapeHtml(quoteStatusLabels[quote.status] || formatLabel(quote.status))}</span>
-      </div>
 
-      <form class="admin-quote-form" data-quote-id="${escapeHtml(quote.id)}">
-        <div class="admin-form-grid">
-          <label>
-            Portal status
-            <select name="status">
-              ${quoteStatusOptionsMarkup(quote.status)}
-            </select>
-          </label>
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Portal status</h3>
+            <p>Use the existing status vocabulary</p>
+          </div>
+          <form class="admin-quote-form" data-quote-id="${escapeHtml(quote.id)}">
+            <div class="admin-form-grid">
+              <label>
+                Portal status
+                <select name="status">
+                  ${quoteStatusOptionsMarkup(quote.status)}
+                </select>
+              </label>
 
-          <label>
-            Estimate
-            <input name="estimated_quote" type="number" min="0" step="0.01" value="${escapeHtml(Number(quote.estimated_quote || 0).toFixed(2))}">
-          </label>
+              <label>
+                Estimate
+                <input name="estimated_quote" type="number" min="0" step="0.01" value="${escapeHtml(Number(quote.estimated_quote || 0).toFixed(2))}">
+              </label>
 
-          <label class="form-span-2">
-            Status detail
-            <textarea name="status_detail" rows="3" placeholder="Explain what the client should expect next.">${escapeHtml(quote.status_detail || "")}</textarea>
-          </label>
-        </div>
-        <div class="admin-actions">
-          <button class="button button-primary" type="submit">Save portal status</button>
-        </div>
-      </form>
-    </article>
-  `).join("");
+              <label class="form-span-2">
+                Status detail
+                <textarea name="status_detail" rows="3" placeholder="Explain what the client should expect next.">${escapeHtml(quote.status_detail || "")}</textarea>
+              </label>
+            </div>
+            <div class="admin-actions">
+              <button class="button button-primary" type="submit">Save portal status</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Shipment file</h3>
+            <p>Customer-supplied proof and tracking</p>
+          </div>
+          <div class="quote-submeta">
+            <span>${escapeHtml(shipment?.carrier || "Carrier pending")}</span>
+            <span>${escapeHtml(shipment?.tracking_number ? `Tracking ${shipment.tracking_number}` : "Tracking pending")}</span>
+            <span>${escapeHtml(shipment?.customer_shipping_cost != null ? `Shipping paid ${formatCurrency(shipment.customer_shipping_cost)}` : "Shipping cost pending")}</span>
+            <span>${escapeHtml(shipment?.shipped_at ? `Shipped ${formatDateTime(shipment.shipped_at)}` : "Shipment not yet marked in transit")}</span>
+            <span>${escapeHtml(shipment?.received_at ? `Received ${formatDateTime(shipment.received_at)}` : "Package not yet received")}</span>
+          </div>
+          ${shipment?.receipt_object_path ? `
+            <div class="admin-actions">
+              <button class="button button-secondary" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
+            </div>
+          ` : `
+            <p class="quote-card-note">No shipping receipt has been uploaded yet.</p>
+          `}
+        </section>
+
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Inspection</h3>
+            <p>Keep inspection data separate from client-facing status</p>
+          </div>
+          <form class="admin-inspection-form" data-quote-id="${escapeHtml(quote.id)}">
+            <div class="admin-form-grid">
+              <label>
+                Tested karat
+                <select name="tested_karat">
+                  <option value=""${quote.tested_karat ? "" : " selected"}>Not set</option>
+                  <option value="10K"${quote.tested_karat === "10K" ? " selected" : ""}>10K</option>
+                  <option value="14K"${quote.tested_karat === "14K" ? " selected" : ""}>14K</option>
+                  <option value="18K"${quote.tested_karat === "18K" ? " selected" : ""}>18K</option>
+                  <option value="22K"${quote.tested_karat === "22K" ? " selected" : ""}>22K</option>
+                  <option value="24K"${quote.tested_karat === "24K" ? " selected" : ""}>24K</option>
+                  <option value="mixed"${quote.tested_karat === "mixed" ? " selected" : ""}>Mixed</option>
+                </select>
+              </label>
+
+              <label>
+                Tested weight in grams
+                <input name="tested_weight_grams" type="number" min="0" step="0.01" value="${quote.tested_weight_grams != null ? escapeHtml(Number(quote.tested_weight_grams).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Authenticity verdict
+                <select name="authenticity_verdict">
+                  ${["pending", "verified", "adjusted", "counterfeit"].map((value) => {
+                    const selected = (quote.authenticity_verdict || "pending") === value ? " selected" : "";
+                    return `<option value="${value}"${selected}>${escapeHtml(authenticityLabels[value])}</option>`;
+                  }).join("")}
+                </select>
+              </label>
+
+              <label>
+                Counterfeit return deadline
+                <input name="return_deadline_at" type="date" value="${escapeHtml(formatDateInputValue(quote.return_deadline_at))}">
+              </label>
+
+              <label class="form-span-2">
+                Inspection notes
+                <textarea name="inspection_notes" rows="3" placeholder="Document tested purity, weight differences, counterfeit findings, or return instructions.">${escapeHtml(quote.inspection_notes || "")}</textarea>
+              </label>
+            </div>
+            <div class="admin-actions">
+              <button class="button button-primary" type="submit">Save inspection</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Final offer</h3>
+            <p>Offer total can include shipping reimbursement after a passed inspection</p>
+          </div>
+          <form class="admin-offer-form" data-quote-id="${escapeHtml(quote.id)}" data-offer-id="${escapeHtml(offer?.id || "")}">
+            <div class="admin-form-grid">
+              <label>
+                Final offer total
+                <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Shipping reimbursement included
+                <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
+              </label>
+
+              <label class="form-span-2">
+                Offer notes
+                <textarea name="notes" rows="3" placeholder="Explain adjustments for tested weight, karat, or return-shipping requirements.">${escapeHtml(offer?.notes || "")}</textarea>
+              </label>
+            </div>
+            <div class="quote-submeta">
+              <span>${escapeHtml(offer?.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : "Offer not yet sent")}</span>
+              <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Awaiting client response")}</span>
+              ${offer?.declined_at ? `<span>${escapeHtml(`Declined ${formatDateTime(offer.declined_at)}`)}</span>` : ""}
+            </div>
+            <div class="admin-actions">
+              <button class="button button-primary" type="submit">Save and send final offer</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="quote-card-section">
+          <div class="admin-section-head">
+            <h3>Payout</h3>
+            <p>Mark payment sent after the client accepts</p>
+          </div>
+          <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
+            <div class="admin-form-grid">
+              <label>
+                Payout amount
+                <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+              </label>
+
+              <label>
+                Method
+                <input name="method" type="text" value="${escapeHtml(payout?.method || "")}" placeholder="ACH, wire, Zelle">
+              </label>
+
+              <label>
+                Payout status
+                <select name="status">
+                  ${payoutStatuses.map((value) => {
+                    const selected = (payout?.status || "pending") === value ? " selected" : "";
+                    return `<option value="${value}"${selected}>${escapeHtml(formatLabel(value))}</option>`;
+                  }).join("")}
+                </select>
+              </label>
+
+              <label>
+                Reference id
+                <input name="reference_id" type="text" value="${escapeHtml(payout?.reference_id || "")}">
+              </label>
+            </div>
+            <div class="quote-submeta">
+              <span>${escapeHtml(payout?.paid_at ? `Paid ${formatDateTime(payout.paid_at)}` : "Payment not yet sent")}</span>
+            </div>
+            <div class="admin-actions">
+              <button class="button button-primary" type="submit">Save payout</button>
+            </div>
+          </form>
+        </section>
+      </article>
+    `;
+  }).join("");
 }
 
 async function loadIntakeRequests() {
@@ -474,13 +747,51 @@ async function loadSelectedIntakeData(intakeId) {
       .select(`
         id,
         reference_code,
+        source_intake_request_id,
         item_summary,
         claimed_karat,
         claimed_weight_grams,
         estimated_quote,
         status,
         status_detail,
+        tested_karat,
+        tested_weight_grams,
+        authenticity_verdict,
+        inspection_notes,
+        return_deadline_at,
         submitted_at
+        ,
+        shipments (
+          id,
+          carrier,
+          tracking_number,
+          status,
+          customer_shipping_cost,
+          receipt_object_path,
+          receipt_uploaded_at,
+          shipped_at,
+          received_at,
+          created_at
+        ),
+        offers (
+          id,
+          final_offer,
+          shipping_reimbursement_amount,
+          notes,
+          sent_at,
+          expires_at,
+          accepted_at,
+          declined_at
+        ),
+        payouts (
+          id,
+          amount,
+          method,
+          status,
+          reference_id,
+          paid_at,
+          created_at
+        )
       `)
       .eq("user_id", state.matchedProfile.id)
       .order("submitted_at", { ascending: false });
@@ -516,6 +827,189 @@ async function refreshDashboard(preserveSelection = true) {
 
   state.selectedIntakeId = nextSelection;
   await loadSelectedIntakeData(nextSelection);
+}
+
+async function saveInspectionForm(form) {
+  const quoteId = form.getAttribute("data-quote-id");
+  const quote = getQuoteById(quoteId);
+  if (!quoteId || !quote) {
+    showBanner("The inspection record could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const formData = new FormData(form);
+  const authenticityVerdict = String(formData.get("authenticity_verdict") || "pending");
+  const returnDeadlineInput = String(formData.get("return_deadline_at") || "").trim();
+
+  const payload = {
+    tested_karat: String(formData.get("tested_karat") || "").trim() || null,
+    tested_weight_grams: parseOptionalNumber(formData.get("tested_weight_grams")),
+    authenticity_verdict: authenticityVerdict,
+    inspection_notes: String(formData.get("inspection_notes") || "").trim() || null,
+    return_deadline_at: returnDeadlineInput
+      ? new Date(`${returnDeadlineInput}T00:00:00`).toISOString()
+      : authenticityVerdict === "counterfeit"
+        ? new Date(Date.now() + (60 * 24 * 60 * 60 * 1000)).toISOString()
+        : null
+  };
+
+  const { error } = await state.supabase
+    .from("quotes")
+    .update(payload)
+    .eq("id", quoteId);
+
+  if (error) {
+    showBanner(error.message, "warning");
+    return;
+  }
+
+  await loadSelectedIntakeData(state.selectedIntakeId);
+  showBanner("Inspection details saved successfully.", "success");
+}
+
+async function saveOfferForm(form) {
+  const quoteId = form.getAttribute("data-quote-id");
+  const offerId = form.getAttribute("data-offer-id");
+  if (!quoteId) {
+    showBanner("The final offer could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const formData = new FormData(form);
+  const finalOffer = parseOptionalNumber(formData.get("final_offer"));
+  const reimbursementAmount = parseOptionalNumber(formData.get("shipping_reimbursement_amount")) ?? 0;
+  const notes = String(formData.get("notes") || "").trim() || null;
+
+  if (finalOffer == null) {
+    showBanner("Enter the final offer total before sending the offer.", "warning");
+    return;
+  }
+
+  let offerError = null;
+  if (offerId) {
+    const updateResponse = await state.supabase
+      .from("offers")
+      .update({
+        final_offer: finalOffer,
+        shipping_reimbursement_amount: reimbursementAmount,
+        notes
+      })
+      .eq("id", offerId);
+
+    offerError = updateResponse.error;
+  } else {
+    const insertResponse = await state.supabase
+      .from("offers")
+      .insert({
+        quote_id: quoteId,
+        final_offer: finalOffer,
+        shipping_reimbursement_amount: reimbursementAmount,
+        notes,
+        sent_at: new Date().toISOString()
+      });
+
+    offerError = insertResponse.error;
+  }
+
+  if (offerError) {
+    showBanner(offerError.message, "warning");
+    return;
+  }
+
+  const reimbursementCopy = reimbursementAmount > 0
+    ? ` This amount includes ${formatCurrency(reimbursementAmount)} in reimbursed outbound shipping.`
+    : "";
+
+  const { error } = await state.supabase
+    .from("quotes")
+    .update({
+      status: "offer_sent",
+      status_detail: `A final offer of ${formatCurrency(finalOffer)} has been issued and is awaiting response.${reimbursementCopy}`
+    })
+    .eq("id", quoteId);
+
+  if (error) {
+    showBanner(error.message, "warning");
+    return;
+  }
+
+  await loadSelectedIntakeData(state.selectedIntakeId);
+  showBanner("Final offer saved and marked as sent.", "success");
+}
+
+async function savePayoutForm(form) {
+  const quoteId = form.getAttribute("data-quote-id");
+  const payoutId = form.getAttribute("data-payout-id");
+  if (!quoteId) {
+    showBanner("The payout could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const formData = new FormData(form);
+  const amount = parseOptionalNumber(formData.get("amount"));
+  const method = String(formData.get("method") || "").trim() || null;
+  const status = String(formData.get("status") || "pending");
+  const referenceId = String(formData.get("reference_id") || "").trim() || null;
+
+  if (amount == null) {
+    showBanner("Enter the payout amount before saving settlement.", "warning");
+    return;
+  }
+
+  if (!method) {
+    showBanner("Enter the payment method before saving payout details.", "warning");
+    return;
+  }
+
+  const payoutPayload = {
+    amount,
+    method,
+    status,
+    reference_id: referenceId,
+    paid_at: status === "paid" ? new Date().toISOString() : null
+  };
+
+  let payoutError = null;
+  if (payoutId) {
+    const updateResponse = await state.supabase
+      .from("payouts")
+      .update(payoutPayload)
+      .eq("id", payoutId);
+
+    payoutError = updateResponse.error;
+  } else {
+    const insertResponse = await state.supabase
+      .from("payouts")
+      .insert({
+        quote_id: quoteId,
+        ...payoutPayload
+      });
+
+    payoutError = insertResponse.error;
+  }
+
+  if (payoutError) {
+    showBanner(payoutError.message, "warning");
+    return;
+  }
+
+  if (status === "paid") {
+    const { error } = await state.supabase
+      .from("quotes")
+      .update({
+        status: "paid",
+        status_detail: "Payment has been issued and the settlement is complete."
+      })
+      .eq("id", quoteId);
+
+    if (error) {
+      showBanner(error.message, "warning");
+      return;
+    }
+  }
+
+  await loadSelectedIntakeData(state.selectedIntakeId);
+  showBanner("Payout details saved successfully.", "success");
 }
 
 async function ensureStaffAccess(user) {
@@ -696,6 +1190,7 @@ async function initAdminDashboard() {
     const formData = new FormData(quoteCreateForm);
     const payload = {
       user_id: state.matchedProfile.id,
+      source_intake_request_id: intake.id,
       metal_type: intake.metal_type || "gold",
       item_summary: String(formData.get("item_summary") || "").trim(),
       claimed_karat: String(formData.get("claimed_karat") || "mixed"),
@@ -718,6 +1213,12 @@ async function initAdminDashboard() {
     createQuoteButton.textContent = "Create client file";
 
     if (insertResponse.error) {
+      if (insertResponse.error.code === "23505") {
+        showBanner("This intake request is already linked to a client file. Refresh the dashboard and update the existing portal status instead.", "warning");
+        await refreshDashboard(true);
+        return;
+      }
+
       showBanner(insertResponse.error.message, "warning");
       return;
     }
@@ -737,38 +1238,82 @@ async function initAdminDashboard() {
     showBanner("Client file created and linked to the matched portal profile.", "success");
   });
 
+  adminQuoteList.addEventListener("click", async (event) => {
+    const receiptButton = event.target.closest("[data-receipt-path]");
+    if (!receiptButton) {
+      return;
+    }
+
+    try {
+      await openReceiptUrl(receiptButton.getAttribute("data-receipt-path"));
+    } catch (error) {
+      showBanner(error instanceof Error ? error.message : "The shipping receipt could not be opened.", "warning");
+      console.error(error);
+    }
+  });
+
   adminQuoteList.addEventListener("submit", async (event) => {
-    const form = event.target.closest(".admin-quote-form");
-    if (!form) {
+    const quoteForm = event.target.closest(".admin-quote-form");
+    if (quoteForm) {
+      event.preventDefault();
+
+      const quoteId = quoteForm.getAttribute("data-quote-id");
+      const quote = getQuoteById(quoteId);
+      if (!quoteId || !quote) {
+        showBanner("The client file could not be matched to a quote.", "warning");
+        return;
+      }
+
+      const formData = new FormData(quoteForm);
+      const nextStatus = String(formData.get("status") || "submitted");
+      const payload = {
+        status: nextStatus,
+        estimated_quote: Number(formData.get("estimated_quote") || 0),
+        status_detail: String(formData.get("status_detail") || "").trim() || null
+      };
+
+      const { error } = await state.supabase
+        .from("quotes")
+        .update(payload)
+        .eq("id", quoteId);
+
+      if (error) {
+        showBanner(error.message, "warning");
+        return;
+      }
+
+      try {
+        await syncShipmentForQuoteStatus(quote, nextStatus);
+      } catch (error) {
+        showBanner(error instanceof Error ? error.message : "The shipment status could not be synchronized.", "warning");
+        console.error(error);
+        return;
+      }
+
+      await loadSelectedIntakeData(state.selectedIntakeId);
+      showBanner("Client file updated successfully.", "success");
       return;
     }
 
-    event.preventDefault();
-
-    const quoteId = form.getAttribute("data-quote-id");
-    if (!quoteId) {
+    const inspectionForm = event.target.closest(".admin-inspection-form");
+    if (inspectionForm) {
+      event.preventDefault();
+      await saveInspectionForm(inspectionForm);
       return;
     }
 
-    const formData = new FormData(form);
-    const payload = {
-      status: String(formData.get("status") || "submitted"),
-      estimated_quote: Number(formData.get("estimated_quote") || 0),
-      status_detail: String(formData.get("status_detail") || "").trim() || null
-    };
-
-    const { error } = await state.supabase
-      .from("quotes")
-      .update(payload)
-      .eq("id", quoteId);
-
-    if (error) {
-      showBanner(error.message, "warning");
+    const offerForm = event.target.closest(".admin-offer-form");
+    if (offerForm) {
+      event.preventDefault();
+      await saveOfferForm(offerForm);
       return;
     }
 
-    await loadSelectedIntakeData(state.selectedIntakeId);
-    showBanner("Client file updated successfully.", "success");
+    const payoutForm = event.target.closest(".admin-payout-form");
+    if (payoutForm) {
+      event.preventDefault();
+      await savePayoutForm(payoutForm);
+    }
   });
 
   state.supabase.auth.onAuthStateChange((_event, session) => {

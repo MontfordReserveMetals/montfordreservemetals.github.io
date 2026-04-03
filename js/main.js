@@ -315,7 +315,7 @@ if (estimatorForm) {
     }
 
     setRequestStatus(
-      `${brandName} has received the request. Review it in Supabase intake_requests, then convert qualified submissions into private-client files and quotes.`,
+      `${brandName} has received the request. If this client later signs into the portal with the same email address, the submission can appear there automatically as a submitted file.`,
       "success"
     );
     resetLeadFields();
