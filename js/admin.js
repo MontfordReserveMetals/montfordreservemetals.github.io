@@ -206,8 +206,9 @@ function isQuoteAtOrPast(quote, thresholdStatus) {
 function buildDefaultStatusDetail(statusValue, options = {}) {
   const finalOffer = Number(options.finalOffer || 0);
   const reimbursementAmount = Number(options.reimbursementAmount || 0);
+  const totalOffer = finalOffer + reimbursementAmount;
   const reimbursementCopy = reimbursementAmount > 0
-    ? ` This amount includes ${formatCurrency(reimbursementAmount)} in reimbursed outbound shipping.`
+    ? ` Shipping reimbursement of ${formatCurrency(reimbursementAmount)} is included, for a total payout of ${formatCurrency(totalOffer)}.`
     : "";
 
   switch (statusValue) {
@@ -228,7 +229,7 @@ function buildDefaultStatusDetail(statusValue, options = {}) {
     case "paid":
       return "Payment has been issued and the settlement is complete.";
     case "returned":
-      return "The item is being returned. Return shipping and disposition instructions are in process.";
+      return "Upload a prepaid 4x6 PDF return label within 30 days if you want the item shipped back.";
     default:
       return null;
   }
@@ -415,7 +416,7 @@ function renderShipmentEvidenceMarkup(shipment) {
     </div>
     ${shipment.receipt_object_path ? `
       <div class="admin-actions">
-        <button class="button button-secondary" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
+        <button class="button button-secondary" type="button" data-storage-bucket="shipment-receipts" data-storage-path="${escapeHtml(shipment.receipt_object_path)}">View shipping receipt</button>
       </div>
     ` : `
       <p class="quote-card-note">No shipping receipt has been uploaded yet.</p>
@@ -439,6 +440,8 @@ function renderCaseRecordMarkup(quote, workflow) {
     offer?.final_offer != null ? `Offer ${formatCurrency(offer.final_offer)}` : null,
     offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : null,
     offer?.declined_at ? `Declined ${formatDateTime(offer.declined_at)}` : null,
+    quote.return_label_due_at ? `Return label due ${formatDate(quote.return_label_due_at)}` : null,
+    quote.return_label_uploaded_at ? `Return label uploaded ${formatDateTime(quote.return_label_uploaded_at)}` : null,
     payout?.status ? `Payout ${formatLabel(payout.status)}` : null
   ].filter(Boolean);
 
@@ -608,14 +611,19 @@ function renderCurrentStepMarkup(quote, workflow) {
           <fieldset class="admin-form-fieldset">
             <div class="admin-form-grid">
               <label>
-                Final offer total
+                Final offer amount
                 <input name="final_offer" type="number" min="0" step="0.01" value="${offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
               </label>
 
               <label>
-                Shipping reimbursement included
+                Shipping reimbursement
                 <input name="shipping_reimbursement_amount" type="number" min="0" step="0.01" value="${escapeHtml(Number(reimbursementAmount || 0).toFixed(2))}">
               </label>
+
+              <div class="admin-total-preview">
+                <span>Total client payout</span>
+                <strong data-offer-total-preview>${escapeHtml(formatCurrency((Number(offer?.final_offer || 0)) + Number(reimbursementAmount || 0)))}</strong>
+              </div>
 
               <label class="form-span-2">
                 Offer notes
@@ -641,6 +649,7 @@ function renderCurrentStepMarkup(quote, workflow) {
         <div class="quote-submeta">
           <span>${escapeHtml(offer?.final_offer != null ? `Final offer ${formatCurrency(offer.final_offer)}` : "Offer amount pending")}</span>
           <span>${escapeHtml(reimbursementAmount > 0 ? `Includes shipping reimbursement ${formatCurrency(reimbursementAmount)}` : "No shipping reimbursement added")}</span>
+          <span>${escapeHtml(offer?.final_offer != null ? `Total client payout ${formatCurrency(Number(offer.final_offer || 0) + reimbursementAmount)}` : "Total payout pending")}</span>
           <span>${escapeHtml(offer?.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : "Offer not yet sent")}</span>
         </div>
         <p class="admin-step-note">
@@ -659,6 +668,8 @@ function renderCurrentStepMarkup(quote, workflow) {
         </div>
         <div class="quote-submeta">
           <span>${escapeHtml(offer?.final_offer != null ? `Accepted offer ${formatCurrency(offer.final_offer)}` : "Accepted offer")}</span>
+          <span>${escapeHtml(reimbursementAmount > 0 ? `Shipping reimbursement ${formatCurrency(reimbursementAmount)}` : "No shipping reimbursement")}</span>
+          <span>${escapeHtml(offer?.final_offer != null ? `Total payout ${formatCurrency(Number(offer.final_offer || 0) + reimbursementAmount)}` : "Total payout pending")}</span>
           <span>${escapeHtml(offer?.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : "Acceptance time pending")}</span>
         </div>
         <form class="admin-payout-form" data-quote-id="${escapeHtml(quote.id)}" data-payout-id="${escapeHtml(payout?.id || "")}">
@@ -666,7 +677,7 @@ function renderCurrentStepMarkup(quote, workflow) {
             <div class="admin-form-grid">
               <label>
                 Payout amount
-                <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml(Number(offer.final_offer).toFixed(2)) : ""}">
+                <input name="amount" type="number" min="0" step="0.01" value="${payout?.amount != null ? escapeHtml(Number(payout.amount).toFixed(2)) : offer?.final_offer != null ? escapeHtml((Number(offer.final_offer || 0) + reimbursementAmount).toFixed(2)) : ""}">
               </label>
 
               <label>
@@ -722,12 +733,21 @@ function renderCurrentStepMarkup(quote, workflow) {
           <p>Return workflow</p>
         </div>
         <p class="admin-step-note">
-          This case is in return handling. If return shipping is unpaid on a counterfeit item, keep the 60-day disposal deadline on file.
+          ${quote.return_label_object_path
+            ? "A prepaid 4x6 PDF return label has been uploaded. Review the label and arrange the return shipment."
+            : "The client must upload a prepaid 4x6 PDF return label within 30 days or risk forfeiting the item."}
         </p>
         <div class="quote-submeta">
           ${offer?.declined_at ? `<span>${escapeHtml(`Declined ${formatDateTime(offer.declined_at)}`)}</span>` : ""}
+          ${quote.return_label_due_at ? `<span>${escapeHtml(`Return label due ${formatDate(quote.return_label_due_at)}`)}</span>` : ""}
+          ${quote.return_label_uploaded_at ? `<span>${escapeHtml(`Label uploaded ${formatDateTime(quote.return_label_uploaded_at)}`)}</span>` : ""}
           ${quote.return_deadline_at ? `<span>${escapeHtml(`Dispose after ${formatDate(quote.return_deadline_at)}`)}</span>` : ""}
         </div>
+        ${quote.return_label_object_path ? `
+          <div class="admin-actions">
+            <button class="button button-secondary" type="button" data-storage-bucket="return-labels" data-storage-path="${escapeHtml(quote.return_label_object_path)}">View return label</button>
+          </div>
+        ` : ""}
       </section>
     `;
   }
@@ -743,14 +763,14 @@ function renderCurrentStepMarkup(quote, workflow) {
   `;
 }
 
-async function openReceiptUrl(path) {
-  if (!state.supabase || !path) {
+async function openStorageObjectUrl(bucketName, path) {
+  if (!state.supabase || !path || !bucketName) {
     return;
   }
 
   const { data, error } = await state.supabase
     .storage
-    .from("shipment-receipts")
+    .from(bucketName)
     .createSignedUrl(path, 300);
 
   if (error) {
@@ -1189,6 +1209,9 @@ async function loadSelectedIntakeData(intakeId) {
         authenticity_verdict,
         inspection_notes,
         return_deadline_at,
+        return_label_object_path,
+        return_label_uploaded_at,
+        return_label_due_at,
         submitted_at
         ,
         shipments (
@@ -1391,7 +1414,7 @@ async function saveOfferForm(form) {
   const notes = String(formData.get("notes") || "").trim() || null;
 
   if (finalOffer == null) {
-    showBanner("Enter the final offer total before sending the offer.", "warning");
+    showBanner("Enter the final offer amount before sending the offer.", "warning");
     return;
   }
 
@@ -1514,6 +1537,17 @@ async function savePayoutForm(form) {
 
   await loadSelectedIntakeData(state.selectedIntakeId);
   showBanner("Payout details saved successfully.", "success");
+}
+
+function updateOfferTotalPreview(form) {
+  const totalPreview = form.querySelector("[data-offer-total-preview]");
+  if (!totalPreview) {
+    return;
+  }
+
+  const finalOffer = parseOptionalNumber(form.querySelector('input[name="final_offer"]')?.value) ?? 0;
+  const reimbursementAmount = parseOptionalNumber(form.querySelector('input[name="shipping_reimbursement_amount"]')?.value) ?? 0;
+  totalPreview.textContent = formatCurrency(finalOffer + reimbursementAmount);
 }
 
 async function ensureStaffAccess(user) {
@@ -1772,15 +1806,18 @@ async function initAdminDashboard() {
       }
     }
 
-    const receiptButton = event.target.closest("[data-receipt-path]");
-    if (!receiptButton) {
+    const storageButton = event.target.closest("[data-storage-path]");
+    if (!storageButton) {
       return;
     }
 
     try {
-      await openReceiptUrl(receiptButton.getAttribute("data-receipt-path"));
+      await openStorageObjectUrl(
+        storageButton.getAttribute("data-storage-bucket"),
+        storageButton.getAttribute("data-storage-path")
+      );
     } catch (error) {
-      showBanner(error instanceof Error ? error.message : "The shipping receipt could not be opened.", "warning");
+      showBanner(error instanceof Error ? error.message : "The requested document could not be opened.", "warning");
       console.error(error);
     }
   });
@@ -1805,6 +1842,13 @@ async function initAdminDashboard() {
     if (payoutForm) {
       event.preventDefault();
       await savePayoutForm(payoutForm);
+    }
+  });
+
+  adminQuoteList.addEventListener("input", (event) => {
+    const offerForm = event.target.closest(".admin-offer-form");
+    if (offerForm) {
+      updateOfferTotalPreview(offerForm);
     }
   });
 

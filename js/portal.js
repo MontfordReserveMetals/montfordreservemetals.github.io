@@ -163,7 +163,7 @@ function describePortalLoadError(error) {
     return "The portal sign-in worked, but the database schema is incomplete. Run the latest supabase/schema.sql in Supabase.";
   }
 
-  if (/claim_portal_intake_requests|submit_client_shipment|respond_to_offer/i.test(message) || /could not find the function/i.test(message)) {
+  if (/claim_portal_intake_requests|submit_client_shipment|respond_to_offer|submit_return_label/i.test(message) || /could not find the function/i.test(message)) {
     return "The portal sign-in worked, but the latest portal workflow functions are missing. Re-run the latest supabase/schema.sql in Supabase.";
   }
 
@@ -217,6 +217,15 @@ function normalizeNumberInput(value) {
 
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isPdfFile(file) {
+  if (!file) {
+    return false;
+  }
+
+  const fileName = String(file.name || "").toLowerCase();
+  return file.type === "application/pdf" || fileName.endsWith(".pdf");
 }
 
 function normalizeArray(records) {
@@ -293,7 +302,7 @@ function buildInspectionMarkup(quote) {
     quote.authenticity_verdict ? `Result ${authenticityLabels[quote.authenticity_verdict] || quote.authenticity_verdict}` : null,
     quote.tested_karat ? `Tested purity ${quote.tested_karat}` : null,
     quote.tested_weight_grams ? `Tested weight ${Number(quote.tested_weight_grams).toFixed(2)}g` : null,
-    quote.return_deadline_at ? `Return deadline ${formatDate(quote.return_deadline_at)}` : null
+    quote.return_deadline_at ? `Counterfeit hold deadline ${formatDate(quote.return_deadline_at)}` : null
   ].filter(Boolean);
 
   return `
@@ -319,7 +328,7 @@ function buildShipmentSummaryMarkup(shipment) {
   ].filter(Boolean);
 
   const receiptButton = shipment.receipt_object_path
-    ? `<button class="button button-secondary portal-inline-button" type="button" data-receipt-path="${escapeHtml(shipment.receipt_object_path)}">View receipt</button>`
+    ? `<button class="button button-secondary portal-inline-button" type="button" data-storage-bucket="shipment-receipts" data-storage-path="${escapeHtml(shipment.receipt_object_path)}">View receipt</button>`
     : "";
 
   return `
@@ -379,9 +388,11 @@ function buildOfferMarkup(quote, offer) {
     return "";
   }
 
+  const reimbursementAmount = Number(offer.shipping_reimbursement_amount || 0);
+  const finalOfferAmount = Number(offer.final_offer || 0);
+  const totalOfferAmount = finalOfferAmount + reimbursementAmount;
+
   const details = [
-    `Final offer ${formatCurrency(offer.final_offer)}`,
-    offer.shipping_reimbursement_amount ? `Includes shipping reimbursement ${formatCurrency(offer.shipping_reimbursement_amount)}` : null,
     offer.sent_at ? `Sent ${formatDateTime(offer.sent_at)}` : null,
     offer.accepted_at ? `Accepted ${formatDateTime(offer.accepted_at)}` : null,
     offer.declined_at ? `Declined ${formatDateTime(offer.declined_at)}` : null
@@ -392,6 +403,20 @@ function buildOfferMarkup(quote, offer) {
   return `
     <section class="quote-card-section">
       <div class="dashboard-label">Final offer</div>
+      <div class="offer-breakdown">
+        <div class="offer-breakdown-row">
+          <span>Final offer</span>
+          <strong>${escapeHtml(formatCurrency(finalOfferAmount))}</strong>
+        </div>
+        <div class="offer-breakdown-row">
+          <span>Includes shipping reimbursement</span>
+          <strong>${escapeHtml(formatCurrency(reimbursementAmount))}</strong>
+        </div>
+      </div>
+      <div class="offer-total-card" aria-label="Total amount including final offer and shipping reimbursement">
+        <span class="offer-total-label">Total amount including final offer and shipping</span>
+        <strong class="offer-total-amount">${escapeHtml(formatCurrency(totalOfferAmount))}</strong>
+      </div>
       <div class="quote-submeta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
       ${offer.notes ? `<p class="quote-card-note">${escapeHtml(offer.notes)}</p>` : ""}
       ${canRespond ? `
@@ -400,6 +425,51 @@ function buildOfferMarkup(quote, offer) {
           <button class="button button-secondary portal-inline-button" type="button" data-offer-response="declined" data-quote-id="${escapeHtml(quote.id)}">Decline and arrange return</button>
         </div>
       ` : ""}
+    </section>
+  `;
+}
+
+function buildReturnLabelMarkup(quote) {
+  if (quote.status !== "returned") {
+    return "";
+  }
+
+  const details = [
+    quote.return_label_due_at ? `Upload return label by ${formatDate(quote.return_label_due_at)}` : null,
+    quote.return_label_uploaded_at ? `Label uploaded ${formatDateTime(quote.return_label_uploaded_at)}` : null
+  ].filter(Boolean);
+
+  const labelButton = quote.return_label_object_path
+    ? `<button class="button button-secondary portal-inline-button" type="button" data-storage-bucket="return-labels" data-storage-path="${escapeHtml(quote.return_label_object_path)}">View uploaded return label</button>`
+    : "";
+
+  const uploadForm = !quote.return_label_object_path ? `
+    <form class="portal-action-form portal-return-label-form" data-quote-id="${escapeHtml(quote.id)}">
+      <div class="portal-action-grid">
+        <label class="form-span-2">
+          4x6 return label PDF
+          <input name="return_label_file" type="file" accept="application/pdf,.pdf" required>
+        </label>
+      </div>
+      <p class="quote-card-note">
+        If you want your items returned, upload a prepaid 4x6 PDF shipping label within 30 days. If no usable label is received in time, the items may be forfeited.
+      </p>
+      <div class="quote-card-actions">
+        <button class="button button-primary" type="submit">Upload return label</button>
+      </div>
+    </form>
+  ` : `
+    <p class="quote-card-note">
+      Your prepaid return label is on file. The office will review it and arrange shipment back to you.
+    </p>
+  `;
+
+  return `
+    <section class="quote-card-section">
+      <div class="dashboard-label">Return label</div>
+      <div class="quote-submeta">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+      ${labelButton ? `<div class="quote-card-actions">${labelButton}</div>` : ""}
+      ${uploadForm}
     </section>
   `;
 }
@@ -480,6 +550,7 @@ function renderQuotes(quotes) {
         ${buildShipmentFormMarkup(quote, shipment)}
         ${buildInspectionMarkup(quote)}
         ${buildOfferMarkup(quote, offer)}
+        ${buildReturnLabelMarkup(quote)}
         ${buildPayoutMarkup(payout)}
         <div class="timeline">${renderTimeline(quote.status)}</div>
       </article>
@@ -544,6 +615,9 @@ async function loadDashboard(supabase, user) {
       authenticity_verdict,
       inspection_notes,
       return_deadline_at,
+      return_label_object_path,
+      return_label_uploaded_at,
+      return_label_due_at,
       shipments (
         id,
         carrier,
@@ -600,22 +674,22 @@ async function claimPortalIntakeRequests(supabase) {
   return Number(data ?? 0);
 }
 
-function buildReceiptPath(userId, quoteId, fileName) {
+function buildStoragePath(userId, quoteId, prefix, fileName) {
   const safeName = String(fileName || "receipt")
     .replace(/[^a-zA-Z0-9._-]/g, "-")
     .replace(/-+/g, "-");
 
-  return `${userId}/${quoteId}/${Date.now()}-${safeName}`;
+  return `${userId}/${quoteId}/${prefix}-${Date.now()}-${safeName}`;
 }
 
-async function openReceiptUrl(path) {
-  if (!portalState.supabase || !path) {
+async function openStorageObjectUrl(bucketName, path) {
+  if (!portalState.supabase || !path || !bucketName) {
     return;
   }
 
   const { data, error } = await portalState.supabase
     .storage
-    .from("shipment-receipts")
+    .from(bucketName)
     .createSignedUrl(path, 300);
 
   if (error) {
@@ -655,7 +729,7 @@ async function submitShipmentForm(form) {
   }
 
   try {
-    const receiptPath = buildReceiptPath(portalState.user.id, quoteId, receiptFile.name);
+    const receiptPath = buildStoragePath(portalState.user.id, quoteId, "shipment-receipt", receiptFile.name);
     const uploadResponse = await portalState.supabase
       .storage
       .from("shipment-receipts")
@@ -694,6 +768,67 @@ async function submitShipmentForm(form) {
   }
 }
 
+async function submitReturnLabelForm(form) {
+  if (!portalState.supabase || !portalState.user) {
+    showBanner("Sign in before uploading a return label.", "warning");
+    return;
+  }
+
+  const quoteId = form.getAttribute("data-quote-id");
+  if (!quoteId) {
+    showBanner("The return label could not be matched to a quote.", "warning");
+    return;
+  }
+
+  const returnLabelFile = form.querySelector('input[name="return_label_file"]')?.files?.[0] ?? null;
+  if (!returnLabelFile || !isPdfFile(returnLabelFile)) {
+    showBanner("Upload a prepaid 4x6 PDF return label before continuing.", "warning");
+    return;
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton?.setAttribute("disabled", "disabled");
+  if (submitButton) {
+    submitButton.textContent = "Uploading return label...";
+  }
+
+  try {
+    const labelPath = buildStoragePath(portalState.user.id, quoteId, "return-label", returnLabelFile.name);
+    const uploadResponse = await portalState.supabase
+      .storage
+      .from("return-labels")
+      .upload(labelPath, returnLabelFile, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: "application/pdf"
+      });
+
+    if (uploadResponse.error) {
+      throw uploadResponse.error;
+    }
+
+    const returnLabelResponse = await portalState.supabase.rpc("submit_return_label", {
+      p_quote_id: quoteId,
+      p_label_object_path: labelPath
+    });
+
+    if (returnLabelResponse.error) {
+      throw returnLabelResponse.error;
+    }
+
+    await loadDashboard(portalState.supabase, portalState.user);
+    showBanner("Return label uploaded successfully. The office will review it and arrange shipment back to you.", "success");
+  } catch (error) {
+    showBanner(describePortalLoadError(error), "warning");
+    console.error(error);
+  } finally {
+    submitButton?.removeAttribute("disabled");
+    if (submitButton) {
+      submitButton.textContent = "Upload return label";
+    }
+  }
+}
+
 async function respondToOffer(quoteId, response) {
   if (!portalState.supabase || !portalState.user || !quoteId) {
     return;
@@ -717,7 +852,7 @@ async function respondToOffer(quoteId, response) {
   showBanner(
     response === "accepted"
       ? "Final offer accepted successfully."
-      : "Final offer declined. Return shipping arrangements are now required.",
+      : "Final offer declined. Upload a 4x6 PDF return label within 30 days if you want the items returned.",
     "success"
   );
 }
@@ -796,19 +931,27 @@ async function initLivePortal() {
 
   quoteList.addEventListener("submit", async (event) => {
     const shipmentForm = event.target.closest(".portal-shipment-form");
-    if (!shipmentForm) {
+    if (shipmentForm) {
+      event.preventDefault();
+      await submitShipmentForm(shipmentForm);
       return;
     }
 
-    event.preventDefault();
-    await submitShipmentForm(shipmentForm);
+    const returnLabelForm = event.target.closest(".portal-return-label-form");
+    if (returnLabelForm) {
+      event.preventDefault();
+      await submitReturnLabelForm(returnLabelForm);
+    }
   });
 
   quoteList.addEventListener("click", async (event) => {
-    const receiptButton = event.target.closest("[data-receipt-path]");
-    if (receiptButton) {
+    const storageButton = event.target.closest("[data-storage-path]");
+    if (storageButton) {
       try {
-        await openReceiptUrl(receiptButton.getAttribute("data-receipt-path"));
+        await openStorageObjectUrl(
+          storageButton.getAttribute("data-storage-bucket"),
+          storageButton.getAttribute("data-storage-path")
+        );
       } catch (error) {
         showBanner(describePortalLoadError(error), "warning");
         console.error(error);

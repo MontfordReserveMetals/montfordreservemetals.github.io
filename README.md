@@ -121,7 +121,9 @@ set
    - `supabase functions deploy estimate-payout`
 5. Prime the cache once after deploy:
    - call `refresh-market-prices` once with your `MARKET_REFRESH_SECRET`
-6. If you want automated refreshes, run `supabase/schedule-market-refresh.sql` in the SQL editor after adding the needed Vault secrets.
+6. If you want automated refreshes, create these Vault secrets first, then run `supabase/schedule-market-refresh.sql` in the SQL editor:
+   - `project_url` = `https://YOUR_PROJECT_REF.supabase.co`
+   - `market_refresh_secret` = the same secret value you stored as the Edge Function secret `MARKET_REFRESH_SECRET`
 7. After the cache is filled, the homepage can request private payout estimates through `estimate-payout`.
 
 Example cache refresh request:
@@ -160,6 +162,7 @@ The Supabase anon key is public and is meant to be used in the browser. The Supa
 - Customers do not need an account to request an estimate.
 - When that same customer later signs into the portal with the same email address, the portal can automatically claim matching `intake_requests` and create portal-visible `quotes` with status `submitted`.
 - The portal now also lets signed-in customers upload outbound shipment tracking, the amount they paid for shipping, and a receipt image or PDF.
+- If a client declines the final offer and wants the item returned, the portal now requires a prepaid 4x6 PDF return label upload within 30 days.
 - When the Edge Functions are deployed, the public estimate should come from the private `estimate-payout` function instead of an exposed browser-side formula.
 - You review `intake_requests` inside the Supabase dashboard and decide which ones move forward.
 
@@ -184,7 +187,7 @@ The Supabase anon key is public and is meant to be used in the browser. The Supa
 6. Have the customer use the portal magic-link flow when you are ready to give them account access.
 7. On that portal sign-in, matching anonymous homepage requests for the same email can appear automatically as `submitted` client files.
 8. Use `admin.html` to review the intake request, confirm the linked file, record inspection details, send the final offer, and move the portal status forward from there.
-9. Customers can upload shipment proof and accept or decline final offers from `portal.html`.
+9. Customers can upload shipment proof, accept or decline final offers, and upload prepaid return labels from `portal.html`.
 10. Use `admin.html` or Supabase directly to mark payout and deeper case-management details while volume is low.
 11. Add legal pages, mailing instructions, and your real operating copy before launch.
 12. Only after real volume exists, add shipping-label automation, email automation, and payout automation.
