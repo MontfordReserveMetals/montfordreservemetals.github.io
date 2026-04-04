@@ -36,7 +36,7 @@ jobs:
         run: |
           mkdir -p _site
           cp *.html _site/
-          cp -r css js _site/
+          cp -r css js images _site/
           mkdir -p _site/docs
           cp -r docs/James_Muntford _site/docs/
 
