@@ -1217,6 +1217,98 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.what-we-buy-feature,
+.what-we-buy-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.what-we-buy-feature {
+  grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1fr);
+  align-items: stretch;
+  margin-bottom: 1rem;
+}
+
+.buy-summary-card,
+.buy-feature-image-card,
+.buy-card {
+  padding: 1.25rem;
+  border: 1px solid rgba(98, 76, 41, 0.16);
+  border-radius: var(--radius-lg);
+  background: rgba(250, 244, 235, 0.84);
+  box-shadow: var(--shadow);
+}
+
+.buy-summary-card,
+.buy-card-body {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.buy-summary-card h3,
+.buy-card h3 {
+  max-width: none;
+}
+
+.buy-summary-card p,
+.buy-card-body p {
+  margin: 0;
+  line-height: 1.75;
+  color: var(--text-soft);
+}
+
+.buy-summary-list {
+  margin-top: 0.35rem;
+}
+
+.buy-exclusion {
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(102, 79, 39, 0.16);
+}
+
+.buy-exclusion strong {
+  color: var(--text);
+}
+
+.buy-feature-image-card,
+.buy-card {
+  overflow: hidden;
+}
+
+.buy-feature-image-card img,
+.buy-card img {
+  width: 100%;
+  border-radius: 24px;
+  object-fit: cover;
+}
+
+.buy-feature-image-card img {
+  aspect-ratio: 16 / 10;
+}
+
+.what-we-buy-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.buy-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.buy-card img {
+  aspect-ratio: 16 / 10;
+}
+
+.buy-card-wide {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.8fr);
+  align-items: center;
+}
+
+.buy-card-wide img {
+  aspect-ratio: 16 / 9;
+}
+
 .resource-card,
 .document-card,
 .aside-card,
@@ -2426,7 +2518,10 @@ h3 {
   .cards-grid,
   .founder-feature-grid,
   .page-hero-grid,
-  .scene-gallery {
+  .scene-gallery,
+  .what-we-buy-feature,
+  .what-we-buy-grid,
+  .buy-card-wide {
     grid-template-columns: 1fr;
   }
 
@@ -2436,7 +2531,8 @@ h3 {
 
   .trust-row,
   .insignia-band,
-  .resources-grid {
+  .resources-grid,
+  .what-we-buy-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2546,7 +2642,8 @@ h3 {
   .insignia-band,
   .profile-grid,
   .resources-grid,
-  .scene-gallery {
+  .scene-gallery,
+  .what-we-buy-grid {
     grid-template-columns: 1fr;
   }
 
