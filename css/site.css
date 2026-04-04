@@ -1275,6 +1275,11 @@ h3 {
   overflow: hidden;
 }
 
+.buy-feature-image-card {
+  padding: 0.5rem;
+  display: flex;
+}
+
 .buy-feature-image-card img,
 .buy-card img {
   width: 100%;
@@ -1283,7 +1288,10 @@ h3 {
 }
 
 .buy-feature-image-card img {
-  aspect-ratio: 16 / 10;
+  height: 100%;
+  min-height: 100%;
+  aspect-ratio: auto;
+  object-position: center center;
 }
 
 .what-we-buy-grid {
