@@ -1225,7 +1225,7 @@ h3 {
 
 .what-we-buy-feature {
   grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1fr);
-  align-items: stretch;
+  align-items: start;
   margin-bottom: 1rem;
 }
 
@@ -1276,8 +1276,11 @@ h3 {
 }
 
 .buy-feature-image-card {
-  padding: 0.5rem;
+  margin: 0;
+  padding: 0.35rem;
   display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .buy-feature-image-card img,
@@ -1288,9 +1291,11 @@ h3 {
 }
 
 .buy-feature-image-card img {
-  height: 100%;
-  min-height: 100%;
+  display: block;
+  width: 100%;
+  height: auto;
   aspect-ratio: auto;
+  object-fit: contain;
   object-position: center center;
 }
 
@@ -1326,6 +1331,22 @@ h3 {
 .buy-card-wide .buy-card-body {
   align-content: center;
   min-height: 0;
+}
+
+main#top .section > .section-heading {
+  width: 100%;
+  justify-items: center;
+  text-align: center;
+}
+
+main#top .section > .section-heading h2 {
+  max-width: 30ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+
+main#top .section > .section-heading > p {
+  margin-inline: auto;
 }
 
 .resource-card,
