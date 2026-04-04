@@ -1297,6 +1297,7 @@ h3 {
 
 .buy-card img {
   aspect-ratio: 16 / 10;
+  object-position: center center;
 }
 
 .buy-card-wide {
@@ -1306,7 +1307,17 @@ h3 {
 }
 
 .buy-card-wide img {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 320px;
+  object-fit: contain;
+  object-position: center center;
+  background: rgba(255, 250, 243, 0.62);
+}
+
+.buy-card-wide .buy-card-body {
+  align-content: center;
+  min-height: 0;
 }
 
 .resource-card,
