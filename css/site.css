@@ -531,6 +531,7 @@ h3 {
 
 .scene-gallery {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .page-hero-grid {
@@ -563,6 +564,13 @@ h3 {
 .scene-card,
 .hero-visual-card {
   overflow: hidden;
+}
+
+.scene-card {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  height: fit-content;
 }
 
 .portrait-card img,
