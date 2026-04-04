@@ -4,8 +4,8 @@ window.siteConfig = {
     mark: "MR",
     descriptor: "Buyers of Gold, Silver & Fine Jewelry",
     email: "montfordreservemetals@proton.me",
-    phoneDisplay: "(561) 555-0188",
-    phoneHref: "+15615550188"
+    phoneDisplay: "(757) 786-9181",
+    phoneHref: "+17577869181",
   },
   founder: {
     name: "James Montford",
